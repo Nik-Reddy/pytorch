@@ -809,8 +809,9 @@ def compile_fx_inner(
         # (store_cubin, autotune_at_compile_time, etc.) is applied. This is
         # needed because lazy backward compilation may run after the
         # config.patch context from compile_fx has already exited.
+        # Suppress cudagraph skip logging here; compile_fx already logged it.
         if kwargs["cpp_wrapper"]:
-            stack.enter_context(config.patch(get_cpp_wrapper_config()))
+            stack.enter_context(config.patch(get_cpp_wrapper_config(log_cudagraph_skip=False)))
         stack.enter_context(torch.utils._python_dispatch._disable_current_modes())
         stack.enter_context(_use_lazy_graph_module(dynamo_config.use_lazy_graph_module))
         stack.enter_context(
@@ -2179,8 +2180,8 @@ def fw_compiler_freezing(
     return wrapper
 
 
-def get_cpp_wrapper_config() -> dict[str, object]:
-    if config.triton.cudagraphs:
+def get_cpp_wrapper_config(log_cudagraph_skip: bool = True) -> dict[str, object]:
+    if log_cudagraph_skip and config.triton.cudagraphs:
         log_cudagraph_skip_and_bump_counter(
             format_default_skip_message("cpp wrapper enabled")
         )
