@@ -991,6 +991,8 @@ class TritonTemplateKernel(TritonKernel):
         """
         Hook called from template code to get the size of an arg.
         Will add needed args to pass it in if it is dynamic.
+        Automatically wraps with tl.full([], ..., dtype=INDEX_DTYPE) when
+        int64 indexing is needed to prevent overflow in size arithmetic.
         """
         assert isinstance(index, int)
         if name is None:
@@ -998,7 +1000,10 @@ class TritonTemplateKernel(TritonKernel):
         else:
             assert isinstance(name, str)
             val = self.named_input_nodes[name].get_size()[index]
-        return texpr(self.rename_indexing(val))
+        result = texpr(self.rename_indexing(val))
+        if self.index_dtype == "tl.int64":
+            return f"tl.full([], {result}, dtype=INDEX_DTYPE)"
+        return result
 
     def stride(self, name, index=None):
         """
@@ -2828,7 +2833,8 @@ class TritonTemplate(KernelTemplate):
         workspace_zero_fill = False
         workspace_args = []
         if workspace_arg is not None:
-            workspace_size_bytes = workspace_arg.count
+            ws_count = V.graph.sizevars.optimization_hint(workspace_arg.count)
+            workspace_size_bytes = ws_count * get_dtype_size(workspace_arg.dtype)
             workspace_zero_fill = (
                 workspace_arg.zero_mode != WorkspaceZeroMode.UNINITIALIZED
             )
@@ -3461,11 +3467,7 @@ def get_num_workers() -> int:
     if "TORCHINDUCTOR_COMPILE_THREADS" in os.environ:
         return int(os.environ["TORCHINDUCTOR_COMPILE_THREADS"])
 
-    cpu_count = (
-        len(os.sched_getaffinity(0))
-        if hasattr(os, "sched_getaffinity")
-        else os.cpu_count()
-    )
+    cpu_count = torch._utils.cpu_count()
     assert cpu_count
 
     # Divide the number of CPUs by the number of GPUs for distributed workloads
@@ -3736,7 +3738,6 @@ class AlgorithmSelectorCache(PersistentCache):
         benchmark_with_cudagraphs: bool = False,  # Use CUDA graphs for ExternKernelCaller benchmarking
     ):
         from .codegen.cutlass.kernel import CUTLASSTemplateCaller
-        from .codegen.subgraph import SubgraphChoiceCaller
 
         # Run preprocessing functions on choices
         for preprocessing_fn in self.preprocessing_fns:
@@ -3790,9 +3791,6 @@ class AlgorithmSelectorCache(PersistentCache):
             if use_pipelined_autotuning():
                 assert not config.benchmark_epilogue_fusion, (
                     "Benchmarking epilogues will cause gpu contention with pipelined autotuning"
-                )
-                assert all(not isinstance(c, SubgraphChoiceCaller) for c in choices), (
-                    "Pipelined autotuning not compatible yet with subgraph choices"
                 )
                 extern_kernels = [
                     c for c in choices if AlgorithmSelectorCache._is_extern(c)
