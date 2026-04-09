@@ -5876,10 +5876,22 @@ def munge_exc(e, *, suppress_suffix=True, suppress_prefix=True, file=None, skip=
         s = re.sub(r"\n*Set TORCHDYNAMO_VERBOSE=1.+", "", s, flags=re.DOTALL)
     if suppress_prefix:
         s = re.sub(r"Cannot export model.+\n\n", "", s)
-    # Strip column-marker lines (~~^) from "Source of graph break:" sections.
-    # These markers are only emitted on Python 3.11+ but we want tests to pass
-    # on older Python versions that emit only the source line without markers.
-    s = re.sub(r"\n +[~^]+[ \t]*(?=\n)", "", s)
+    # Strip source attribution sections whose content varies by Python version
+    # (Python 3.11+ instruction positions, different bytecode layouts across
+    # versions). The SourceLocationTests in test_exc.py cover this behavior
+    # with proper skipIf guards.
+    s = re.sub(
+        r"\nSource of graph break:.*?(?=\nUser code traceback:)",
+        "",
+        s,
+        flags=re.DOTALL,
+    )
+    s = re.sub(
+        r"\nRelated values:.*?(?=\nUser code traceback:)",
+        "",
+        s,
+        flags=re.DOTALL,
+    )
     s = re.sub(r" +$", "", s, flags=re.MULTILINE)
     return s
 

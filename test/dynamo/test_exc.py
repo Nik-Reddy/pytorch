@@ -171,18 +171,6 @@ missing BUILD_SET handler
 
  For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb0200.html
 
-Source of graph break:
-            return {1, 2}
-
-Related values:
-  ConstantVariable(int: 1) originated from:
-  File "test_exc.py", line N
-                return {1, 2}
-
-  ConstantVariable(int: 2) originated from:
-  File "test_exc.py", line N
-                return {1, 2}
-
 User code traceback:
   File "test_exc.py", line N, in test_unsupported_error
     torch.compile(fn001, backend="eager")(torch.randn(1))
@@ -245,8 +233,6 @@ Call to `torch._dynamo.graph_break()`
 
  For more details about this graph break, please visit: https://meta-pytorch.github.io/compile-graph-break-site/gb/gb0025.html
 
-Source of graph break:
-            return fn002(x)
 User code traceback:
   File "test_exc.py", line N, in test_graph_break_log
     torch.compile(fn001, backend="eager")(torch.randn(1))
