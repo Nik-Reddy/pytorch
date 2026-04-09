@@ -1,5 +1,6 @@
 #include <ATen/native/mps/kernels/GridSampler.h>
 #include <ATen/native/mps/kernels/SamplingHelpers.h>
+#include <c10/metal/atomic.h>
 #include <c10/metal/utils.h>
 #include <metal_array>
 #include <metal_stdlib>
@@ -81,23 +82,22 @@ static float grid_sampler_unnormalize(
   }
 }
 
-// Clip coordinates for border padding
-static float clip_coordinates(float in, int32_t clip_limit) {
-  return ::metal::clamp(in, 0.0, clip_limit - 1.0);
+// Clip coordinates to [0, max_val]
+static float clip_coordinates(float in, float max_val) {
+  return ::metal::clamp(in, 0.0f, max_val);
 }
 
 // Reflect coordinates for reflection padding
 template <typename T>
-static T reflect_coordinates(T in, int32_t twice_low, int32_t twice_high) {
-  if (twice_low == twice_high) {
+static T reflect_coordinates(T in, T low, T high) {
+  if (low == high) {
     return 0;
   }
-  auto min_val = static_cast<T>(twice_low) / 2;
-  auto span = static_cast<T>(twice_high - twice_low) / 2;
-  in = fabs(in - min_val);
+  auto span = high - low;
+  in = fabs(in - low);
   auto extra = fmod(in, span);
   int32_t flips = static_cast<int32_t>(floor(in / span));
-  return (flips % 2 == 0) ? (extra + min_val) : (span - extra + min_val);
+  return (flips % 2 == 0) ? (extra + low) : (span - extra + low);
 }
 
 // Padding functors: each encapsulates the padding logic for integer indices
@@ -107,6 +107,10 @@ struct PadZeros {
 
   static int32_t pad(int32_t idx, int32_t input_size, bool) {
     return (idx < 0 || idx >= input_size) ? IDX_ZERO : idx;
+  }
+
+  static float apply_padding(float coord, int32_t, bool) {
+    return coord;
   }
 
   static float compute_source(float coord, int32_t size, bool align_corners) {
@@ -121,9 +125,15 @@ struct PadBorder {
     return clamp(idx, 0, input_size - 1);
   }
 
+  static float apply_padding(float coord, int32_t size, bool) {
+    return clip_coordinates(coord, size - 1.0f);
+  }
+
   static float compute_source(float coord, int32_t size, bool align_corners) {
-    coord = grid_sampler_unnormalize(coord, size, align_corners);
-    return clip_coordinates(coord, size);
+    return apply_padding(
+        grid_sampler_unnormalize(coord, size, align_corners),
+        size,
+        align_corners);
   }
 };
 
@@ -138,14 +148,20 @@ struct PadReflection {
     return is_reverse ? idx_mod_reverse : idx_mod;
   }
 
-  static float compute_source(float coord, int32_t size, bool align_corners) {
-    coord = grid_sampler_unnormalize(coord, size, align_corners);
+  static float apply_padding(float coord, int32_t size, bool align_corners) {
     if (align_corners) {
-      coord = reflect_coordinates(coord, 0, 2 * (size - 1));
+      coord = reflect_coordinates(coord, 0.0f, static_cast<float>(size - 1));
     } else {
-      coord = reflect_coordinates(coord, -1, 2 * size - 1);
+      coord = reflect_coordinates(coord, -0.5f, size - 0.5f);
     }
-    return clip_coordinates(coord, size);
+    return clip_coordinates(coord, size - 1.0f);
+  }
+
+  static float compute_source(float coord, int32_t size, bool align_corners) {
+    return apply_padding(
+        grid_sampler_unnormalize(coord, size, align_corners),
+        size,
+        align_corners);
   }
 };
 
@@ -608,3 +624,488 @@ kernel void grid_sampler_3d(
 REGISTER_GRID_SAMPLER_OPS(float);
 REGISTER_GRID_SAMPLER_OPS(half);
 REGISTER_GRID_SAMPLER_OPS(bfloat);
+
+// ========== Backward kernels ==========
+
+// Each _set_grad function returns float2{coord, grad} where grad is
+// d(output_coord)/d(input_coord), used to chain-rule through the
+// coordinate transform in the backward pass.
+
+static float2 grid_sampler_unnormalize_set_grad(
+    float coord,
+    int32_t size,
+    bool align_corners) {
+  float grad = align_corners ? (size - 1) / 2.0f : size / 2.0f;
+  return {grid_sampler_unnormalize(coord, size, align_corners), grad};
+}
+
+static float2 clip_coordinates_set_grad(float in, float max_val) {
+  if (in <= 0.0f) {
+    return {0.0f, 0.0f};
+  }
+  if (in >= max_val) {
+    return {max_val, 0.0f};
+  }
+  return {in, 1.0f};
+}
+
+static float2 reflect_coordinates_set_grad(float in, float low, float high) {
+  if (low == high) {
+    return {0.0f, 0.0f};
+  }
+  int grad_in_mult = 1;
+  float span = high - low;
+  in = in - low;
+  if (in < 0.0f) {
+    grad_in_mult = -1;
+    in = -in;
+  }
+  float extra = fmod(in, span);
+  int flips = static_cast<int>(floor(in / span));
+  if (flips % 2 == 0) {
+    return {extra + low, static_cast<float>(grad_in_mult)};
+  }
+  return {span - extra + low, static_cast<float>(-grad_in_mult)};
+}
+
+// Combines unnormalize + padding, returns {source_index, grad_multiplier}.
+template <typename Pad>
+static float2 compute_source_index_set_grad(
+    float coord,
+    int32_t size,
+    bool align_corners);
+
+template <>
+float2 compute_source_index_set_grad<PadZeros>(
+    float coord,
+    int32_t size,
+    bool align_corners) {
+  return grid_sampler_unnormalize_set_grad(coord, size, align_corners);
+}
+
+template <>
+float2 compute_source_index_set_grad<PadBorder>(
+    float coord,
+    int32_t size,
+    bool align_corners) {
+  float2 unnorm = grid_sampler_unnormalize_set_grad(coord, size, align_corners);
+  float2 clip = clip_coordinates_set_grad(unnorm.x, size - 1.0f);
+  return {clip.x, unnorm.y * clip.y};
+}
+
+template <>
+float2 compute_source_index_set_grad<PadReflection>(
+    float coord,
+    int32_t size,
+    bool align_corners) {
+  float2 unnorm = grid_sampler_unnormalize_set_grad(coord, size, align_corners);
+  float2 refl;
+  if (align_corners) {
+    refl = reflect_coordinates_set_grad(
+        unnorm.x, 0.0f, static_cast<float>(size - 1));
+  } else {
+    refl = reflect_coordinates_set_grad(unnorm.x, -0.5f, size - 0.5f);
+  }
+  float2 clip = clip_coordinates_set_grad(refl.x, size - 1.0f);
+  return {clip.x, unnorm.y * refl.y * clip.y};
+}
+
+static bool within_bounds_2d(int2 pos, int2 size) {
+  return pos.x >= 0 && pos.x < size.x && pos.y >= 0 && pos.y < size.y;
+}
+
+// Atomic safe add for grad_input
+template <typename T>
+static void safe_add_2d_atomic(
+    device AtomicType_t<T>* data,
+    int2 pos,
+    int2 stride,
+    int2 size,
+    opmath_t<T> delta,
+    long NC_offset) {
+  if (within_bounds_2d(pos, size)) {
+    AtomicType<T>::atomic_add(
+        data,
+        NC_offset + pos.y * stride.y + pos.x * stride.x,
+        static_cast<T>(delta));
+  }
+}
+
+// Apply padding and convert to bounded int2 position (for bicubic backward
+// where coordinates are already in pixel space).
+template <typename Pad>
+static int2 apply_padding_2d(float x, float y, int2 size, bool align_corners) {
+  return {
+      static_cast<int32_t>(Pad::apply_padding(x, size.x, align_corners)),
+      static_cast<int32_t>(Pad::apply_padding(y, size.y, align_corners))};
+}
+
+// Get bounded value for bicubic backward
+template <typename Pad, typename T>
+static opmath_t<T> get_value_bounded_backward(
+    constant T* data,
+    float x,
+    float y,
+    int2 size,
+    int2 stride,
+    bool align_corners) {
+  int2 pos = apply_padding_2d<Pad>(x, y, size, align_corners);
+  if (within_bounds_2d(pos, size)) {
+    return static_cast<opmath_t<T>>(data[pos.y * stride.y + pos.x * stride.x]);
+  }
+  return 0;
+}
+
+// Add value at bounded coordinates for bicubic backward grad_input
+template <typename Pad, typename T>
+static void add_value_bounded_backward(
+    device AtomicType_t<T>* data,
+    float x,
+    float y,
+    int2 size,
+    int2 stride,
+    opmath_t<T> delta,
+    bool align_corners,
+    long NC_offset) {
+  int2 pos = apply_padding_2d<Pad>(x, y, size, align_corners);
+  safe_add_2d_atomic<T>(data, pos, stride, size, delta, NC_offset);
+}
+
+// Get cubic coefficients gradient
+template <typename T>
+static void get_cubic_coefficients_grad(T coeffs[4], T t) {
+  T A = static_cast<T>(-0.75);
+  T x;
+  x = -1 - t;
+  coeffs[0] = (-3 * A * x - 10 * A) * x - 8 * A;
+  x = -t;
+  coeffs[1] = (-3 * (A + 2) * x - 2 * (A + 3)) * x;
+  x = 1 - t;
+  coeffs[2] = (3 * (A + 2) * x - 2 * (A + 3)) * x;
+  x = 2 - t;
+  coeffs[3] = (3 * A * x - 10 * A) * x + 8 * A;
+}
+
+// Bilinear backward kernel
+template <typename Pad, typename T>
+kernel void grid_sampler_2d_backward_bilinear(
+    device AtomicType_t<T>* grad_input [[buffer(0)]],
+    device T* grad_grid [[buffer(1)]],
+    constant T* grad_output [[buffer(2)]],
+    constant T* input [[buffer(3)]],
+    constant T* grid [[buffer(4)]],
+    constant GridSamplerBackwardParams<4>& params [[buffer(5)]],
+    uint tid [[thread_position_in_grid]]) {
+  auto C = params.forward.input_sizes[1];
+  auto out_H = params.forward.output_sizes[2];
+  auto out_W = params.forward.output_sizes[3];
+  int2 inp_size = {
+      params.forward.input_sizes[3], params.forward.input_sizes[2]};
+  int2 inp_stride = {
+      params.forward.input_strides[3], params.forward.input_strides[2]};
+  int2 gInp_stride = {
+      params.grad_input_strides[3], params.grad_input_strides[2]};
+  auto inp_sN = params.forward.input_strides[0];
+  auto inp_sC = params.forward.input_strides[1];
+  auto gOut_sN = params.grad_output_strides[0];
+  auto gOut_sC = params.grad_output_strides[1];
+  auto gOut_sH = params.grad_output_strides[2];
+  auto gOut_sW = params.grad_output_strides[3];
+  auto gInp_sN = params.grad_input_strides[0];
+  auto gInp_sC = params.grad_input_strides[1];
+  auto gGrid_sW = params.grad_grid_sW;
+  auto align_corners = params.forward.align_corners;
+  auto input_requires_grad = params.input_requires_grad;
+
+  int32_t w = tid % out_W;
+  int32_t h = (tid / out_W) % out_H;
+  int32_t n = tid / (out_H * out_W);
+
+  auto grid_offset = n * params.forward.grid_strides[0] +
+      h * params.forward.grid_strides[1] + w * params.forward.grid_strides[2];
+  float x = static_cast<float>(grid[grid_offset]);
+  float y =
+      static_cast<float>(grid[grid_offset + params.forward.grid_strides[3]]);
+
+  // .x = source index, .y = gradient multiplier from coordinate transform
+  float2 ix = compute_source_index_set_grad<Pad>(x, inp_size.x, align_corners);
+  float2 iy = compute_source_index_set_grad<Pad>(y, inp_size.y, align_corners);
+
+  int32_t ix_nw = static_cast<int32_t>(floor(ix.x));
+  int32_t iy_nw = static_cast<int32_t>(floor(iy.x));
+  int32_t ix_ne = ix_nw + 1;
+  int32_t iy_ne = iy_nw;
+  int32_t ix_sw = ix_nw;
+  int32_t iy_sw = iy_nw + 1;
+  int32_t ix_se = ix_nw + 1;
+  int32_t iy_se = iy_nw + 1;
+
+  float nw = (ix_se - ix.x) * (iy_se - iy.x);
+  float ne = (ix.x - ix_sw) * (iy_sw - iy.x);
+  float sw = (ix_ne - ix.x) * (iy.x - iy_ne);
+  float se = (ix.x - ix_nw) * (iy.x - iy_nw);
+
+  opmath_t<T> gix = 0, giy = 0;
+  auto gOut_ptr_NCHW = grad_output + n * gOut_sN + h * gOut_sH + w * gOut_sW;
+  long NC_offset = n * gInp_sN;
+  auto inp_ptr_NC = input + n * inp_sN;
+
+  for (int32_t c = 0; c < C; ++c,
+               inp_ptr_NC += inp_sC,
+               NC_offset += gInp_sC,
+               gOut_ptr_NCHW += gOut_sC) {
+    opmath_t<T> gOut = static_cast<opmath_t<T>>(*gOut_ptr_NCHW);
+
+    if (input_requires_grad) {
+      safe_add_2d_atomic<T>(
+          grad_input,
+          {ix_nw, iy_nw},
+          gInp_stride,
+          inp_size,
+          nw * gOut,
+          NC_offset);
+      safe_add_2d_atomic<T>(
+          grad_input,
+          {ix_ne, iy_ne},
+          gInp_stride,
+          inp_size,
+          ne * gOut,
+          NC_offset);
+      safe_add_2d_atomic<T>(
+          grad_input,
+          {ix_sw, iy_sw},
+          gInp_stride,
+          inp_size,
+          sw * gOut,
+          NC_offset);
+      safe_add_2d_atomic<T>(
+          grad_input,
+          {ix_se, iy_se},
+          gInp_stride,
+          inp_size,
+          se * gOut,
+          NC_offset);
+    }
+
+    if (within_bounds_2d({ix_nw, iy_nw}, inp_size)) {
+      opmath_t<T> nw_val =
+          inp_ptr_NC[iy_nw * inp_stride.y + ix_nw * inp_stride.x];
+      gix -= nw_val * (iy_se - iy.x) * gOut;
+      giy -= nw_val * (ix_se - ix.x) * gOut;
+    }
+    if (within_bounds_2d({ix_ne, iy_ne}, inp_size)) {
+      opmath_t<T> ne_val =
+          inp_ptr_NC[iy_ne * inp_stride.y + ix_ne * inp_stride.x];
+      gix += ne_val * (iy_sw - iy.x) * gOut;
+      giy -= ne_val * (ix.x - ix_sw) * gOut;
+    }
+    if (within_bounds_2d({ix_sw, iy_sw}, inp_size)) {
+      opmath_t<T> sw_val =
+          inp_ptr_NC[iy_sw * inp_stride.y + ix_sw * inp_stride.x];
+      gix -= sw_val * (iy.x - iy_ne) * gOut;
+      giy += sw_val * (ix_ne - ix.x) * gOut;
+    }
+    if (within_bounds_2d({ix_se, iy_se}, inp_size)) {
+      opmath_t<T> se_val =
+          inp_ptr_NC[iy_se * inp_stride.y + ix_se * inp_stride.x];
+      gix += se_val * (iy.x - iy_nw) * gOut;
+      giy += se_val * (ix.x - ix_nw) * gOut;
+    }
+  }
+
+  auto gGrid_ptr_NHW = grad_grid + tid * gGrid_sW;
+  gGrid_ptr_NHW[0] = static_cast<T>(ix.y * gix);
+  gGrid_ptr_NHW[1] = static_cast<T>(iy.y * giy);
+}
+
+// Nearest backward kernel
+template <typename Pad, typename T>
+kernel void grid_sampler_2d_backward_nearest(
+    device AtomicType_t<T>* grad_input [[buffer(0)]],
+    device T* grad_grid [[buffer(1)]],
+    constant T* grad_output [[buffer(2)]],
+    constant T* input [[buffer(3)]] __attribute__((unused)),
+    constant T* grid [[buffer(4)]],
+    constant GridSamplerBackwardParams<4>& params [[buffer(5)]],
+    uint tid [[thread_position_in_grid]]) {
+  auto out_H = params.forward.output_sizes[2];
+  auto out_W = params.forward.output_sizes[3];
+  int2 inp_size = {
+      params.forward.input_sizes[3], params.forward.input_sizes[2]};
+  int2 gInp_stride = {
+      params.grad_input_strides[3], params.grad_input_strides[2]};
+  auto gOut_sN = params.grad_output_strides[0];
+  auto gOut_sC = params.grad_output_strides[1];
+  auto gOut_sH = params.grad_output_strides[2];
+  auto gOut_sW = params.grad_output_strides[3];
+  auto gInp_sN = params.grad_input_strides[0];
+  auto gInp_sC = params.grad_input_strides[1];
+  auto gGrid_sW = params.grad_grid_sW;
+  auto align_corners = params.forward.align_corners;
+  auto input_requires_grad = params.input_requires_grad;
+
+  int32_t w = tid % out_W;
+  int32_t h = (tid / out_W) % out_H;
+  int32_t n = tid / (out_H * out_W);
+
+  auto grid_offset = n * params.forward.grid_strides[0] +
+      h * params.forward.grid_strides[1] + w * params.forward.grid_strides[2];
+  float x = static_cast<float>(grid[grid_offset]);
+  float y =
+      static_cast<float>(grid[grid_offset + params.forward.grid_strides[3]]);
+
+  float ix = Pad::compute_source(x, inp_size.x, align_corners);
+  float iy = Pad::compute_source(y, inp_size.y, align_corners);
+
+  if (input_requires_grad) {
+    int2 nearest = {
+        static_cast<int32_t>(rint(ix)), static_cast<int32_t>(rint(iy))};
+
+    auto gOut_ptr_NCHW = grad_output + n * gOut_sN + h * gOut_sH + w * gOut_sW;
+    long NC_offset = n * gInp_sN;
+    for (int32_t c = 0; c < params.forward.input_sizes[1];
+         ++c, NC_offset += gInp_sC, gOut_ptr_NCHW += gOut_sC) {
+      safe_add_2d_atomic<T>(
+          grad_input,
+          nearest,
+          gInp_stride,
+          inp_size,
+          static_cast<opmath_t<T>>(*gOut_ptr_NCHW),
+          NC_offset);
+    }
+  }
+
+  auto gGrid_ptr_NHW = grad_grid + tid * gGrid_sW;
+  gGrid_ptr_NHW[0] = static_cast<T>(0);
+  gGrid_ptr_NHW[1] = static_cast<T>(0);
+}
+
+// Bicubic backward kernel
+template <typename Pad, typename T>
+kernel void grid_sampler_2d_backward_bicubic(
+    device AtomicType_t<T>* grad_input [[buffer(0)]],
+    device T* grad_grid [[buffer(1)]],
+    constant T* grad_output [[buffer(2)]],
+    constant T* input [[buffer(3)]],
+    constant T* grid [[buffer(4)]],
+    constant GridSamplerBackwardParams<4>& params [[buffer(5)]],
+    uint tid [[thread_position_in_grid]]) {
+  auto C = params.forward.input_sizes[1];
+  auto out_H = params.forward.output_sizes[2];
+  auto out_W = params.forward.output_sizes[3];
+  int2 inp_size = {
+      params.forward.input_sizes[3], params.forward.input_sizes[2]};
+  int2 inp_stride = {
+      params.forward.input_strides[3], params.forward.input_strides[2]};
+  int2 gInp_stride = {
+      params.grad_input_strides[3], params.grad_input_strides[2]};
+  auto inp_sN = params.forward.input_strides[0];
+  auto inp_sC = params.forward.input_strides[1];
+  auto gOut_sN = params.grad_output_strides[0];
+  auto gOut_sC = params.grad_output_strides[1];
+  auto gOut_sH = params.grad_output_strides[2];
+  auto gOut_sW = params.grad_output_strides[3];
+  auto gInp_sN = params.grad_input_strides[0];
+  auto gInp_sC = params.grad_input_strides[1];
+  auto gGrid_sW = params.grad_grid_sW;
+  auto align_corners = params.forward.align_corners;
+  auto input_requires_grad = params.input_requires_grad;
+
+  int32_t w = tid % out_W;
+  int32_t h = (tid / out_W) % out_H;
+  int32_t n = tid / (out_H * out_W);
+
+  auto grid_offset = n * params.forward.grid_strides[0] +
+      h * params.forward.grid_strides[1] + w * params.forward.grid_strides[2];
+  float x = static_cast<float>(grid[grid_offset]);
+  float y =
+      static_cast<float>(grid[grid_offset + params.forward.grid_strides[3]]);
+
+  float2 ix = grid_sampler_unnormalize_set_grad(x, inp_size.x, align_corners);
+  float2 iy = grid_sampler_unnormalize_set_grad(y, inp_size.y, align_corners);
+
+  float ix_nw = floor(ix.x);
+  float iy_nw = floor(iy.x);
+  float tx = ix.x - ix_nw;
+  float ty = iy.x - iy_nw;
+
+  float x_coeffs[4], y_coeffs[4];
+  float x_coeffs_grad[4], y_coeffs_grad[4];
+  get_cubic_coefficients(x_coeffs, tx);
+  get_cubic_coefficients(y_coeffs, ty);
+  get_cubic_coefficients_grad(x_coeffs_grad, tx);
+  get_cubic_coefficients_grad(y_coeffs_grad, ty);
+
+  opmath_t<T> gix = 0, giy = 0;
+  auto gOut_ptr_NCHW = grad_output + n * gOut_sN + h * gOut_sH + w * gOut_sW;
+  long NC_offset = n * gInp_sN;
+  auto inp_ptr_NC = input + n * inp_sN;
+  int32_t ix_nw_i = static_cast<int32_t>(ix_nw);
+  int32_t iy_nw_i = static_cast<int32_t>(iy_nw);
+
+  for (int32_t c = 0; c < C; ++c,
+               gOut_ptr_NCHW += gOut_sC,
+               NC_offset += gInp_sC,
+               inp_ptr_NC += inp_sC) {
+    opmath_t<T> gOut = static_cast<opmath_t<T>>(*gOut_ptr_NCHW);
+
+    for (int32_t i = 0; i < 4; ++i) {
+      for (int32_t j = 0; j < 4; ++j) {
+        if (input_requires_grad) {
+          add_value_bounded_backward<Pad, T>(
+              grad_input,
+              ix_nw_i - 1 + i,
+              iy_nw_i - 1 + j,
+              inp_size,
+              gInp_stride,
+              gOut * x_coeffs[i] * y_coeffs[j],
+              align_corners,
+              NC_offset);
+        }
+
+        opmath_t<T> val = get_value_bounded_backward<Pad, T>(
+            inp_ptr_NC,
+            ix_nw_i - 1 + i,
+            iy_nw_i - 1 + j,
+            inp_size,
+            inp_stride,
+            align_corners);
+
+        gix -= val * x_coeffs_grad[i] * y_coeffs[j] * gOut;
+        giy -= val * y_coeffs_grad[j] * x_coeffs[i] * gOut;
+      }
+    }
+  }
+
+  auto gGrid_ptr_NHW = grad_grid + tid * gGrid_sW;
+  gGrid_ptr_NHW[0] = static_cast<T>(ix.y * gix);
+  gGrid_ptr_NHW[1] = static_cast<T>(iy.y * giy);
+}
+
+// Registration macros for backward kernels
+#define REGISTER_GRID_SAMPLER_2D_BACKWARD(DTYPE, INTERP, INAME, PAD, PNAME) \
+  template [[host_name("grid_sampler_2d_backward_" INAME "_" PNAME          \
+                       "_" #DTYPE)]] kernel void                            \
+      grid_sampler_2d_backward_##INTERP<PAD, DTYPE>(                        \
+          device AtomicType_t<DTYPE> * grad_input [[buffer(0)]],            \
+          device DTYPE * grad_grid [[buffer(1)]],                           \
+          constant DTYPE * grad_output [[buffer(2)]],                       \
+          constant DTYPE * input [[buffer(3)]],                             \
+          constant DTYPE * grid [[buffer(4)]],                              \
+          constant GridSamplerBackwardParams<4> & params [[buffer(5)]],     \
+          uint tid [[thread_position_in_grid]]);
+
+#define REGISTER_GRID_SAMPLER_2D_BACKWARD_INTERP(DTYPE, INTERP, INAME)         \
+  REGISTER_GRID_SAMPLER_2D_BACKWARD(DTYPE, INTERP, INAME, PadZeros, "zeros")   \
+  REGISTER_GRID_SAMPLER_2D_BACKWARD(DTYPE, INTERP, INAME, PadBorder, "border") \
+  REGISTER_GRID_SAMPLER_2D_BACKWARD(                                           \
+      DTYPE, INTERP, INAME, PadReflection, "reflection")
+
+#define REGISTER_GRID_SAMPLER_2D_BACKWARD_OPS(DTYPE)                    \
+  REGISTER_GRID_SAMPLER_2D_BACKWARD_INTERP(DTYPE, bilinear, "bilinear") \
+  REGISTER_GRID_SAMPLER_2D_BACKWARD_INTERP(DTYPE, nearest, "nearest")   \
+  REGISTER_GRID_SAMPLER_2D_BACKWARD_INTERP(DTYPE, bicubic, "bicubic")
+
+REGISTER_GRID_SAMPLER_2D_BACKWARD_OPS(float);
+REGISTER_GRID_SAMPLER_2D_BACKWARD_OPS(half);
+REGISTER_GRID_SAMPLER_2D_BACKWARD_OPS(bfloat);
