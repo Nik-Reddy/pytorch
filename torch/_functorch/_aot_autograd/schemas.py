@@ -10,8 +10,8 @@ import functools
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, NewType, Protocol, TYPE_CHECKING
-from typing_extensions import ParamSpec, TypeAlias, TypeVar
+from typing import Any, NewType, Protocol, TYPE_CHECKING, TypeAlias
+from typing_extensions import ParamSpec, TypeVar
 
 import torch
 import torch.utils._pytree as pytree

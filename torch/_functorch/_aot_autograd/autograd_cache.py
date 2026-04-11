@@ -17,8 +17,8 @@ import shutil
 import time
 import traceback
 from copy import copy
-from typing import Any, TYPE_CHECKING
-from typing_extensions import TypeAlias, override
+from typing import Any, TYPE_CHECKING, TypeAlias
+from typing_extensions import override
 
 import torch
 from torch._dynamo.precompile_context import PrecompileContext

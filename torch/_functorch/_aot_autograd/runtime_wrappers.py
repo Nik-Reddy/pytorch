@@ -19,8 +19,7 @@ from collections.abc import Callable, Generator, Sequence
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any
-from typing_extensions import TypeAlias
+from typing import Any, TypeAlias
 
 import torch
 import torch.fx as fx
@@ -92,6 +91,7 @@ from .schemas import (
     OpaqueMeta,
     OutputType,
     PlainTensorMeta,
+    StringAnyDict,
     SubclassCreationMeta,
     SubclassMeta,
     TensorAlias,
@@ -126,7 +126,6 @@ aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")
 
 OutputStrideMetadata: TypeAlias = list[list[int] | None]
 UpdatedInputStorageIndices: TypeAlias = list[int | tuple[int, torch.Tensor]]
-StringAnyDict: TypeAlias = dict[str, Any]
 
 
 def _unwrap_no_symints(args: AnyList) -> AnyList:

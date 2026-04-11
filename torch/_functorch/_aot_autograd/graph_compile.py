@@ -19,8 +19,7 @@ import traceback
 from collections import defaultdict
 from collections.abc import Callable, Generator
 from contextlib import contextmanager, nullcontext
-from typing import Any
-from typing_extensions import TypeAlias
+from typing import Any, TypeAlias
 
 import torch
 import torch.utils._pytree as pytree
@@ -180,12 +179,6 @@ aot_joint_log = getArtifactLogger(__name__, "aot_joint_graph")
 aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")
 
 aten = torch.ops.aten
-
-# Returns a Callable and a ViewAndMutationMeta.
-# Currently, only export needs the ViewAndMutationMeta after this function.
-# TODO: Refactor this
-DispatchReturn = tuple[AnyCallable, ViewAndMutationMeta]
-
 
 def _create_wrappers_for_dispatch(needs_autograd: bool) -> list[CompilerWrapper]:
     """

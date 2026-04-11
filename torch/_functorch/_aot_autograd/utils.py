@@ -10,8 +10,8 @@ import warnings
 from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from functools import partial, wraps
-from typing import Any, overload, TYPE_CHECKING
-from typing_extensions import ParamSpec, TypeAlias, TypeVar, TypeVarTuple, Unpack
+from typing import Any, overload, TYPE_CHECKING, TypeAlias
+from typing_extensions import ParamSpec, TypeVar, TypeVarTuple, Unpack
 
 import torch
 import torch.utils._pytree as pytree
@@ -28,6 +28,7 @@ _T = TypeVar("_T")
 if TYPE_CHECKING:
     from .schemas import AOTConfig, ViewAndMutationMeta
 
+# These aliases stay local because schemas.py imports strict_zip from utils.py.
 AnyCallable: TypeAlias = Callable[..., Any]
 AnyList: TypeAlias = list[Any]
 AnySequence: TypeAlias = Sequence[Any]
@@ -769,12 +770,9 @@ def simple_wraps(
 
 
 _Ts = TypeVarTuple("_Ts")
-VariadicArgs: TypeAlias = tuple[Unpack[_Ts]]
-OutputDescribedFn: TypeAlias = Callable[[*_Ts], tuple[Any, Any]]
-
 
 def call_and_expect_output_descs(
-    fn: OutputDescribedFn, args: VariadicArgs
+    fn: Callable[[Unpack[_Ts]], tuple[Any, Any]], args: tuple[Unpack[_Ts]]
 ) -> tuple[Any, Any]:
     from .descriptors import AOTOutput
 
