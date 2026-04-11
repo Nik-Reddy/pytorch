@@ -56,7 +56,7 @@ from .utils import simple_wraps
 if TYPE_CHECKING:
     from torch._inductor.compile_fx import _CompileFxKwargs
 
-    from .schemas import CacheableAOTConfig, ViewAndMutationMeta
+    from .schemas import AOTConfig, CacheableAOTConfig, ViewAndMutationMeta
 
 log = logging.getLogger(__name__)
 aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")
@@ -393,7 +393,7 @@ class GenericAOTAutogradResult(Generic[TForward, TBackward]):
     def wrap_post_compile(
         self,
         args: list[torch.Tensor],
-        aot_config: AOTConfig,
+        aot_config: AOTConfig | CacheableAOTConfig,
         fx_config: _CompileFxKwargs,
         # pyrefly: ignore [implicit-any]
     ) -> Callable:
@@ -465,6 +465,10 @@ class GenericAOTAutogradResult(Generic[TForward, TBackward]):
                     "Backward graph (from cache)\n\n%s",
                     self.aot_backward_graph_str,
                 )
+        # Cache hits only retain the cacheable subset of AOTConfig. Narrow once
+        # here so the existing post-compile wrapper stack can keep its compile-time
+        # AOTConfig annotations.
+        runtime_aot_config = cast(AOTConfig, aot_config)
         with dynamo_timed("AOTAutogradCache.inductor_load"):
             compiled_fw_func = self.compiled_fw.load(args)
             compiled_bw_func = None
@@ -512,7 +516,9 @@ class GenericAOTAutogradResult(Generic[TForward, TBackward]):
             maybe_subclass_meta=self.maybe_subclass_meta,
             num_fw_outs_saved_for_bw=self.num_fw_outs_saved_for_bw,
         ).post_compile(
-            compiled_fw_func, aot_config, runtime_metadata=self.runtime_metadata
+            compiled_fw_func,
+            runtime_aot_config,
+            runtime_metadata=self.runtime_metadata,
         )
 
         req_subclass_dispatch = self.maybe_subclass_meta is not None
@@ -525,7 +531,9 @@ class GenericAOTAutogradResult(Generic[TForward, TBackward]):
         compiled_fw_func = FunctionalizedRngRuntimeWrapper(
             return_new_outs=return_new_outs
         ).post_compile(
-            compiled_fw_func, aot_config, runtime_metadata=self.runtime_metadata
+            compiled_fw_func,
+            runtime_aot_config,
+            runtime_metadata=self.runtime_metadata,
         )
         # pyrefly: ignore [missing-attribute]
         compiled_fw_func._boxed_call = True
@@ -554,7 +562,7 @@ class GenericAOTAutogradResult(Generic[TForward, TBackward]):
                 disable_amp=disable_amp,
                 indices_of_inps_to_detach=self.indices_of_inps_to_detach,
                 lazy_backward_info=cached_lazy_backward,
-                aot_config=aot_config,
+                aot_config=runtime_aot_config,
                 fw_metadata=self.runtime_metadata,
                 try_save_cache_entry=None,
             )
@@ -566,14 +574,16 @@ class GenericAOTAutogradResult(Generic[TForward, TBackward]):
                 trace_joint=False,
                 disable_amp=disable_amp,
             ).post_compile(
-                compiled_fw_func, aot_config, runtime_metadata=self.runtime_metadata
+                compiled_fw_func,
+                runtime_aot_config,
+                runtime_metadata=self.runtime_metadata,
             )
 
         # Add serialization function back onto object
         compiled_function, _ = post_compile(
             self.dispatch_wrappers,
             compiled_function,
-            aot_config,
+            runtime_aot_config,
             runtime_metadata=self.runtime_metadata,
         )
 
@@ -670,7 +680,7 @@ def deserialize_bundled_cache_entry(
     with torch._guards.tracing(context):
         compiled_fn = entry.wrap_post_compile(
             [],
-            cast(AOTConfig, entry.sanitized_aot_config),
+            entry.sanitized_aot_config,
             {
                 "cudagraphs": cudagraphs,
                 "boxed_forward_device_index": boxed_forward_device_index,
