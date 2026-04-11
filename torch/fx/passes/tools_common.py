@@ -5,6 +5,7 @@ import operator
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+from typing_extensions import TypeAlias
 
 import torch
 import torch.fx
@@ -21,11 +22,11 @@ __all__ = [
     "stable_topological_sort",
 ]
 
-Tensors = tuple[torch.Tensor] | list[torch.Tensor]
-TensorOrTensors = torch.Tensor | Tensors
-NodeList = list[torch.fx.Node]
-NodeSet = set[torch.fx.Node]
-Names = list[str]
+Tensors: TypeAlias = tuple[torch.Tensor] | list[torch.Tensor]
+TensorOrTensors: TypeAlias = torch.Tensor | Tensors
+NodeList: TypeAlias = list[torch.fx.Node]
+NodeSet: TypeAlias = set[torch.fx.Node]
+Names: TypeAlias = list[str]
 CALLABLE_NODE_OPS = {"call_module", "call_function", "call_method"}
 
 

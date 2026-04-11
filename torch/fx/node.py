@@ -6,8 +6,8 @@ import operator
 import types
 import typing
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from typing import Any, Optional, TYPE_CHECKING, TypeAlias, Union
-from typing_extensions import ParamSpec, TypeVar
+from typing import Any, Optional, TYPE_CHECKING, Union
+from typing_extensions import ParamSpec, TypeAlias, TypeVar
 
 import torch
 from torch._C import _fx_map_aggregate, _fx_map_arg, _NodeBase
@@ -29,7 +29,7 @@ __all__ = ["Node", "map_arg", "map_aggregate", "has_side_effect"]
 
 log = logging.getLogger(__name__)
 
-BaseArgumentTypes = Union[  # noqa: UP007
+BaseArgumentTypes: TypeAlias = Union[  # noqa: UP007
     str,
     int,
     float,
@@ -49,7 +49,7 @@ base_types = typing.get_args(BaseArgumentTypes)
 
 Target: TypeAlias = Callable[..., Any] | str
 
-Argument = Optional[  # noqa: UP007, UP045
+Argument: TypeAlias = Optional[  # noqa: UP007, UP045
     Union[
         tuple["Argument", ...],
         Sequence["Argument"],

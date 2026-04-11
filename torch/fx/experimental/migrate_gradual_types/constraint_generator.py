@@ -2,7 +2,7 @@
 import operator
 import warnings
 from collections.abc import Callable, Iterable
-from typing import TypeVar
+from typing_extensions import TypeVar
 from typing_extensions import ParamSpec
 
 import torch

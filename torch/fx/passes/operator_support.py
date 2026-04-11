@@ -3,6 +3,7 @@ import abc
 import typing as t
 
 import torch
+from typing_extensions import TypeAlias
 import torch.fx
 from torch.fx._compatibility import compatibility
 
@@ -20,10 +21,10 @@ __all__ = [
 ]
 
 # fx.Node.target typename, as returned by `get_node_target()`
-TargetTypeName = str
+TargetTypeName: TypeAlias = str
 
 # Arguments' dtypes for a given node, see `OperatorSupport`
-SupportedArgumentDTypes = (
+SupportedArgumentDTypes: TypeAlias = (
     tuple[
         t.Sequence[t.Sequence[torch.dtype]],
         dict[str, t.Sequence[torch.dtype]],
@@ -31,7 +32,7 @@ SupportedArgumentDTypes = (
     | None
 )
 
-SupportDict = t.Mapping[TargetTypeName, SupportedArgumentDTypes]
+SupportDict: TypeAlias = t.Mapping[TargetTypeName, SupportedArgumentDTypes]
 
 
 @compatibility(is_backward_compatible=False)
@@ -136,7 +137,7 @@ class OperatorSupport(OperatorSupportBase):
 # and composing them into more complex ones
 # ======================================================================
 
-IsNodeSupported = t.Callable[[t.Mapping[str, torch.nn.Module], torch.fx.Node], bool]
+IsNodeSupported: TypeAlias = t.Callable[[t.Mapping[str, torch.nn.Module], torch.fx.Node], bool]
 
 
 @compatibility(is_backward_compatible=False)
