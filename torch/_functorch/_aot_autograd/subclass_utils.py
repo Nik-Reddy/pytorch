@@ -7,7 +7,8 @@ and this includes tensor subclasses that implement __torch_dispatch__.
 import collections
 import typing
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, TypeGuard, TypeVar
+from typing import Any, TypeGuard
+from typing_extensions import TypeVar
 
 import torch
 import torch.utils._pytree as pytree
@@ -31,8 +32,14 @@ from .descriptors import (
     SubclassStrideAOTOutput,
 )
 from .schemas import (
+    AnyCallable,
+    AnyList,
+    AnySequence,
+    AnyTuple,
     FakifiedFlatArgs,
+    FlatFxValues,
     FxValue,
+    IndexList,
     MutationType,
     OpaqueMeta,
     PlainTensorMeta,
@@ -101,7 +108,7 @@ def get_subclass_typing_container(
                         f"expected Tensor or OpaqueBase, got {type(unexpected)}"
                     )
 
-    tracker: dict[Any, list[Any]] = collections.defaultdict(list)
+    tracker: dict[Any, AnyList] = collections.defaultdict(list)
     _get_types_for_subclass(tensor_subclass)
     return tracker
 
@@ -185,7 +192,7 @@ def create_subclass_metadata(
 # computes metadata about "how to reconstruct the current list of subclasses,
 # if we were given their flattened dense tensors instead"
 def create_subclass_meta(
-    curr_args: list[Any] | tuple[Any, ...],
+    curr_args: AnyList | AnyTuple,
     *,
     count_symints: bool = True,
     with_memory_format: bool = False,
@@ -252,11 +259,11 @@ AOTDescriptor = TypeVar("AOTDescriptor", AOTInput, AOTOutput)
 # primals (but not tangents) on entry to the forward. See the runtime version of
 # this function below.
 def unwrap_tensor_subclasses(
-    wrapped_args: list[FxValue],
+    wrapped_args: FlatFxValues,
     wrapped_args_descs: Sequence[AOTDescriptor],
     *,
     append_symints: bool,
-) -> tuple[list[FxValue], list[AOTDescriptor]]:
+) -> tuple[FlatFxValues, list[AOTDescriptor]]:
     def _maybe_fakeify_opaque(v: Any) -> Any:
         # Registered opaque types need to be wrapped as FakeScriptObject for
         # compile-time FX tracing (proxy slot tracking, hashability, etc.).
@@ -274,7 +281,7 @@ def unwrap_tensor_subclasses(
         t: FxValue,
         desc: AOTDescriptor,
         *,
-        out: tuple[list[FxValue], list[AOTDescriptor]],
+        out: tuple[FlatFxValues, list[AOTDescriptor]],
     ) -> None:
         # unwrap a subclass into plain tensors and their size/stride if "append_symint"
         # is True
@@ -310,7 +317,7 @@ def unwrap_tensor_subclasses(
             out[1].extend(SubclassSize(desc, i) for i, _ in sizes)
             out[1].extend(SubclassStride(desc, i) for i, _ in strides)
 
-    xs_inner: list[FxValue] = []
+    xs_inner: FlatFxValues = []
     descs_inner: list[AOTDescriptor] = []
 
     for x, desc in zip(wrapped_args, wrapped_args_descs):
@@ -410,8 +417,8 @@ def runtime_unwrap_tensor_subclasses(
 
 
 def unwrap_tensor_subclasses_with_indices_to_original(
-    wrapped_args: list[Any],
-) -> tuple[list[Any], list[int]]:
+    wrapped_args: AnyList,
+) -> tuple[AnyList, IndexList]:
     ret_unwrapped = []
     ret_indices_to_original = []
     for i, a in enumerate(wrapped_args):
@@ -426,8 +433,8 @@ def unwrap_tensor_subclasses_with_indices_to_original(
 
 
 def remap_unwrapped_subclass_arg_indices(
-    wrapped_args: list[Any], static_input_indices: list[int]
-) -> list[int]:
+    wrapped_args: AnyList, static_input_indices: IndexList
+) -> IndexList:
     static_input_indices_set = set(static_input_indices)
     new_ind = 0
     remapped_static_indices = []
@@ -452,14 +459,14 @@ def remap_unwrapped_subclass_arg_indices(
 # Turns a flattened list of tensor arguments into (maybe) subclass tensors.
 # This function is used both at trace time and runtime, so we have an is_runtime flag telling us which context we're in.
 def wrap_tensor_subclasses(
-    unwrapped_args: Sequence[Any],
+    unwrapped_args: AnySequence,
     *,
     subclass_metas: list[PlainTensorMeta | SubclassCreationMeta],
     num_fw_outs_saved_for_bw: int | None = None,
     included_subclass_symints: bool = False,
     is_runtime: bool = False,
-    make_subclass_override: Callable[..., Any] | None = None,
-) -> tuple[Any, ...]:
+    make_subclass_override: AnyCallable | None = None,
+) -> AnyTuple:
     # pyrefly: ignore [implicit-any]
     wrapped_args = []
     num_args_tallied = 0
@@ -537,11 +544,11 @@ def wrap_tensor_subclasses(
 # - when is_joint_structure is True, args is (primals, tangents)
 # - when is_joint_structure is False, args is [*primals]
 def wrap_tensor_subclasses_maybe_joint(
-    unwrapped_args: Sequence[Any],
+    unwrapped_args: AnySequence,
     *,
     is_joint_structure: bool,
     meta: ViewAndMutationMeta,
-) -> tuple[Any, ...]:
+) -> AnyTuple:
     # Since this function is reused for both inference and joint graphs,
     if is_joint_structure:
         if not (isinstance(unwrapped_args, tuple) and len(unwrapped_args) == 2):
@@ -585,7 +592,7 @@ def wrap_tensor_subclasses_maybe_joint(
 def compute_inner_mutated_inp_indices_from_subclass_meta(
     fw_metadata: ViewAndMutationMeta,
     inner_metadata: ViewAndMutationMeta,
-) -> list[int]:
+) -> IndexList:
     # Note: [Recomputing subclass mutation handling]
     #
     # Generally, if a subclass requires grad, its components will not require grad.

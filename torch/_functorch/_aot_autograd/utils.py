@@ -11,7 +11,7 @@ from collections.abc import Callable, Sequence
 from contextlib import nullcontext
 from functools import partial, wraps
 from typing import Any, overload, TYPE_CHECKING
-from typing_extensions import ParamSpec, TypeVar, TypeVarTuple, Unpack
+from typing_extensions import ParamSpec, TypeAlias, TypeVar, TypeVarTuple, Unpack
 
 import torch
 import torch.utils._pytree as pytree
@@ -27,6 +27,12 @@ from torch.fx.experimental.proxy_tensor import py_sym_types
 _T = TypeVar("_T")
 if TYPE_CHECKING:
     from .schemas import AOTConfig, ViewAndMutationMeta
+
+AnyCallable: TypeAlias = Callable[..., Any]
+AnyList: TypeAlias = list[Any]
+AnySequence: TypeAlias = Sequence[Any]
+StringAnyDict: TypeAlias = dict[str, Any]
+FlatRuntimeFn: TypeAlias = Callable[..., AnyList]
 
 
 KNOWN_TYPES = [
@@ -77,7 +83,7 @@ def normalize_as_list(x: object) -> list[object]:
     return [x]
 
 
-def _get_autocast_states() -> list[Any]:
+def _get_autocast_states() -> AnyList:
     return [
         torch.is_autocast_enabled("cuda"),
         torch.is_autocast_enabled("cpu"),
@@ -87,9 +93,9 @@ def _get_autocast_states() -> list[Any]:
     ]
 
 
-def make_boxed_func(f: Callable[..., Any]) -> Callable[[list[Any]], Any]:
+def make_boxed_func(f: AnyCallable) -> Callable[[AnyList], Any]:
     @simple_wraps(f)
-    def g(args: list[Any]) -> Any:
+    def g(args: AnyList) -> Any:
         return f(*args)
 
     # pyrefly: ignore[missing-attribute]
@@ -98,8 +104,8 @@ def make_boxed_func(f: Callable[..., Any]) -> Callable[[list[Any]], Any]:
 
 
 def make_boxed_compiler(
-    compiler: Callable[..., Any],
-) -> Callable[..., Any]:
+    compiler: AnyCallable,
+) -> AnyCallable:
     @wraps(compiler)
     def f(fx_g: Any, inps: Any) -> Any:
         out_f = compiler(fx_g, inps)
@@ -110,11 +116,11 @@ def make_boxed_compiler(
 
 
 def call_func_at_runtime_with_args(
-    f: Callable[..., Any],
-    args: Sequence[Any],
+    f: AnyCallable,
+    args: AnySequence,
     steal_args: bool = False,
     disable_amp: bool = False,
-) -> list[Any]:
+) -> AnyList:
     if not steal_args:
         args = list(args)
     if not isinstance(args, list):
@@ -159,7 +165,7 @@ class PytreeThunk:
         if self.spec.is_leaf():
             self.is_really_simple = True
 
-    def unflatten(self, x: Sequence[Any]) -> Any:
+    def unflatten(self, x: AnySequence) -> Any:
         if self.is_really_simple:
             return x[0]
         if self.is_simple:
@@ -173,17 +179,17 @@ class PytreeThunk:
 # Also returns the output tree spec, which is needed to recover the "unflattened"
 # output tree structure later.
 def create_tree_flattened_fn(
-    fn: Callable[..., Any],
-    args: Sequence[Any],
-    kwargs: dict[str, Any] | None = None,
-) -> tuple[Callable[..., list[Any]], PytreeThunk]:
+    fn: AnyCallable,
+    args: AnySequence,
+    kwargs: StringAnyDict | None = None,
+) -> tuple[FlatRuntimeFn, PytreeThunk]:
     if kwargs is None:
         kwargs = {}
     # Save the args_spec for flat_tensor_args to unflatten while tracing
     _, tensor_args_spec = pytree.tree_flatten((args, kwargs))
     out_spec = PytreeThunk()
 
-    def flat_fn(*flat_args: Any) -> list[Any]:
+    def flat_fn(*flat_args: Any) -> AnyList:
         # The input are flattened tensor args. Prepare the args in the
         # order that original function expects. Add static args as well.
         # They will appear as tensor constants in the traced graph.
@@ -554,7 +560,7 @@ def unlift_tokens(
 
 
 def root_module_when_exporting_non_strict(
-    flat_fn: Callable[..., Any],
+    flat_fn: AnyCallable,
 ) -> torch.nn.Module | None:
     # When exporting in non-strict mode, we wrap the root module in a specific pattern.
     # See `_aot_export_non_strict` in torch.export._trace.py.
@@ -763,10 +769,12 @@ def simple_wraps(
 
 
 _Ts = TypeVarTuple("_Ts")
+VariadicArgs: TypeAlias = tuple[Unpack[_Ts]]
+OutputDescribedFn: TypeAlias = Callable[[*_Ts], tuple[Any, Any]]
 
 
 def call_and_expect_output_descs(
-    fn: Callable[[*_Ts], tuple[Any, Any]], args: tuple[Unpack[_Ts]]
+    fn: OutputDescribedFn, args: VariadicArgs
 ) -> tuple[Any, Any]:
     from .descriptors import AOTOutput
 
@@ -801,7 +809,7 @@ def call_and_expect_output_descs(
     return outs_pair
 
 
-def fn_wrappers(fn: Callable[..., Any]) -> list[Callable[..., Any]]:
+def fn_wrappers(fn: AnyCallable) -> list[AnyCallable]:
     fns = [fn]
     f = fn
     while hasattr(f, "__wrapped__"):

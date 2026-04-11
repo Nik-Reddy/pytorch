@@ -11,11 +11,11 @@ from typing import Any
 import torch
 import torch.fx.traceback as fx_traceback
 
-from .schemas import AOTConfig
+from .schemas import AOTConfig, StringList
 
 
 # This is a list since looking forward, we can have this arbitrarily nested.
-graph_being_compiled: list[str] = []
+graph_being_compiled: StringList = []
 # TODO: It would be nice to reset the numbering every time aot_id goes
 # up, but this is annoying to do right now (because we don't know if
 # an aot_id will come back from the dead), so right now this also happens
@@ -30,7 +30,7 @@ def set_model_name(name: str) -> None:
     model_name = name
 
 
-def get_aot_compilation_context() -> tuple[list[str], str, int]:
+def get_aot_compilation_context() -> tuple[StringList, str, int]:
     return list(graph_being_compiled), model_name, nth_graph
 
 
@@ -97,7 +97,7 @@ def setup_stacktrace_preservation_hooks(roots: list[torch.autograd.graph.Node]) 
 
             yield node
 
-    def get_callback(saved_stack_: list[str]) -> Callable[[], None]:
+    def get_callback(saved_stack_: StringList) -> Callable[[], None]:
         def callback() -> None:
             global callback_set
             fx_traceback.set_stack_trace(saved_stack_)
@@ -105,7 +105,7 @@ def setup_stacktrace_preservation_hooks(roots: list[torch.autograd.graph.Node]) 
 
         return callback
 
-    def get_prehook(stack_: list[str], seq_nr: int) -> Callable[[Any], None]:
+    def get_prehook(stack_: StringList, seq_nr: int) -> Callable[[Any], None]:
         def prehook(grad_output: Any) -> None:
             global callback_set
 
@@ -121,7 +121,7 @@ def setup_stacktrace_preservation_hooks(roots: list[torch.autograd.graph.Node]) 
         return prehook
 
     def get_posthook(
-        special_stack_: list[str], seq_nr: int
+        special_stack_: StringList, seq_nr: int
     ) -> Callable[[Any, Any], None]:
         def posthook(grad_input: Any, grad_output: Any) -> None:
             fx_traceback.set_stack_trace(special_stack_)

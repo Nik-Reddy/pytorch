@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import collections
 import functools
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, NewType, Protocol, TYPE_CHECKING, TypeVar
-from typing_extensions import ParamSpec
+from typing import Any, NewType, Protocol, TYPE_CHECKING
+from typing_extensions import ParamSpec, TypeAlias, TypeVar
 
 import torch
 import torch.utils._pytree as pytree
@@ -22,13 +23,13 @@ from torch.fx.experimental._backward_state import BackwardState
 from torch.utils._python_dispatch import is_traceable_wrapper_subclass
 
 from .. import config
+from .descriptors import AOTInput, AOTOutput
 from .functional_utils import _check_if_mutation_can_be_in_graph, ViewMetaSequence
 from .utils import strict_zip
 
 
 if TYPE_CHECKING:
     import contextlib
-    from collections.abc import Callable, Iterable, Sequence
 
     from torch._guards import Source
     from torch._inductor.output_code import OutputCode
@@ -36,12 +37,22 @@ if TYPE_CHECKING:
     from torch._ops import OpOverload
     from torch.types import IntLikeType
 
-    from .descriptors import AOTInput, AOTOutput
     from .graph_capture_wrappers import JointFnHandle
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")
 zip = strict_zip
+
+AnyCallable: TypeAlias = Callable[..., Any]
+AnyList: TypeAlias = list[Any]
+AnySequence: TypeAlias = Sequence[Any]
+AnyTuple: TypeAlias = tuple[Any, ...]
+BoolList: TypeAlias = list[bool]
+IndexList: TypeAlias = list[int]
+StringAnyDict: TypeAlias = dict[str, Any]
+StringList: TypeAlias = list[str]
+AOTInputList: TypeAlias = list[AOTInput]
+AOTOutputList: TypeAlias = list[AOTOutput]
 
 
 OutputType = Enum(
@@ -431,10 +442,10 @@ class ViewAndMutationMeta:
     # Their only use today is to pass them as a best-guess for tangents when tracing the joint.
     # Stashing them as part of our "metadata" makes it simpler if we want to run our analysis
     # pass once, and reuse the output throughout AOTAutograd
-    traced_tangents: list[Any]
+    traced_tangents: AnyList
 
     # TODO doc
-    traced_tangents_descs: list[AOTInput]
+    traced_tangents_descs: AOTInputList
 
     # Each of these is a list telling us about subclasses for the inputs/outputs/grad_outs
     # They are used throughout AOTDispatch to tell us how to generate a list of subclass tensors,
@@ -465,7 +476,7 @@ class ViewAndMutationMeta:
     # At runtime, we don't keep the traced_tangents around since they're not serializable.
     # Instead, we keep any necessary subclass metadata necessary about each traced_tangent.
     # This list is generated after calling make_runtime_safe().
-    traced_tangent_metas: list[Any] | None = None
+    traced_tangent_metas: AnyList | None = None
 
     num_symints_saved_for_bw: int | None = None
 
@@ -492,12 +503,12 @@ class ViewAndMutationMeta:
     deterministic: bool | None = None
 
     # Keeps track of which input indices store parameters (which we will treat as static)
-    static_input_indices: list[int] = field(default_factory=list)
+    static_input_indices: IndexList = field(default_factory=list)
 
     # Input indices that held AsyncCollectiveTensors at compile time.
     # Used to emit direct trigger_wait() calls at runtime instead of
     # scanning every arg on every graph invocation.
-    act_input_indices: list[int] = field(default_factory=list)
+    act_input_indices: IndexList = field(default_factory=list)
 
     # Map of effect type (ex. _EffectType.ORDERED) to token.  If there are
     # side-effectful operators, FunctionalTensorMode will populate this
@@ -510,14 +521,14 @@ class ViewAndMutationMeta:
     # (grad mode is disabled by default when users run the backward, but can be turned on with create_graph=True)
     # At runtime during the backward, we use this list of indices to error properly if we find out
     # that it was not safe to include a backward mutation in the graph.
-    indices_of_inputs_that_requires_grad_with_mutations_in_bw: list[int] = field(
+    indices_of_inputs_that_requires_grad_with_mutations_in_bw: IndexList = field(
         default_factory=list
     )
 
     # Indexes of saved tensors which are donated buffer.
     # Donated buffer means the tensor is not alias of any forward user input, forward user output,
     # and backward output.
-    bw_donated_idxs: list[int] | None = None
+    bw_donated_idxs: IndexList | None = None
 
     # Number of tokens used in backward, appended at the end of backward outputs.
     # Filled after tracing joint function.
@@ -960,11 +971,11 @@ class GraphSignature:
         *,
         in_spec: pytree.TreeSpec,
         out_spec: pytree.TreeSpec,
-        graph_input_names: list[str],
-        graph_output_names: list[str],
+        graph_input_names: StringList,
+        graph_output_names: StringList,
         view_mutation_metadata: ViewAndMutationMeta,
-        named_parameters: list[str],
-        named_buffers: list[str],
+        named_parameters: StringList,
+        named_buffers: StringList,
         num_user_inputs: int,
         num_user_outputs: int,
         trace_joint: bool,
@@ -1013,7 +1024,7 @@ class GraphSignature:
         output_tokens = graph_outputs[start:stop]
 
         names = [*input_tokens, *parameters, *buffers, *user_inputs]
-        mutations: list[str] = []
+        mutations: StringList = []
         for idx, input_info in enumerate(view_mutation_metadata.input_info):
             if input_info.mutates_data:
                 if trace_joint:
@@ -1097,10 +1108,10 @@ class AOTConfig:
     Configuration for AOTDispatcher
     """
 
-    fw_compiler: Callable[..., Any] | None
-    bw_compiler: Callable[..., Any] | None
-    partition_fn: Callable[..., Any] | None
-    decompositions: dict[OpOverload, Callable[..., Any]] | None
+    fw_compiler: AnyCallable | None
+    bw_compiler: AnyCallable | None
+    partition_fn: AnyCallable | None
+    decompositions: dict[OpOverload, AnyCallable] | None
     num_params_buffers: int
     aot_id: int
     keep_inference_input_mutations: bool
@@ -1108,8 +1119,8 @@ class AOTConfig:
     no_tangents: bool = False
     dynamic_shapes: bool = False
     aot_autograd_arg_pos_to_source: list[Source] | None = None
-    static_input_indices: list[int] | None = None
-    inference_compiler: Callable[..., Any] | None = None
+    static_input_indices: IndexList | None = None
+    inference_compiler: AnyCallable | None = None
     enable_log: bool = True
     # this is always false outside of export.
     pre_dispatch: bool = False
@@ -1180,10 +1191,10 @@ class AOTState:
     #
     # (By the way, this is NEVER the joint inputs!  Those only ever go in
     # AOTGraphCapture)
-    flat_args: list[FxValue]
+    flat_args: FlatFxValues
 
     # The descriptor for each argument in flat_args.
-    flat_args_descs: list[AOTInput]
+    flat_args_descs: AOTInputList
 
     # This contains view and mutation information about the function, which we
     # detected by doing an initial trace when we created this state.
@@ -1214,6 +1225,20 @@ class AOTState:
 
 
 FxValue = Tensor | int | SymInt | BackwardState | OpaqueBase
+FlatFxValues: TypeAlias = list[FxValue]
+FlatTensorList: TypeAlias = list[Tensor]
+OptionalTensorList: TypeAlias = list[Tensor | None]
+OptionalAOTOutputList: TypeAlias = list[AOTOutput | None]
+TraceFnResult: TypeAlias = tuple[FlatFxValues, AOTOutputList]
+PreppedForAutogradTraceResult: TypeAlias = tuple[
+    tuple[FlatFxValues, BoolList], AOTOutputList
+]
+JointTraceFnResult: TypeAlias = tuple[
+    tuple[FlatFxValues, OptionalTensorList],
+    tuple[AOTOutputList, OptionalAOTOutputList],
+]
+UpdatedFlatArgs: TypeAlias = AnyList | tuple[AnyList, AnyList]
+UpdatedFlatArgsDescs: TypeAlias = AOTInputList | tuple[AOTInputList, AOTInputList]
 
 
 class CompilerWrapper:
@@ -1246,12 +1271,12 @@ class CompilerWrapper:
     def pre_compile(
         self,
         flat_fn: TraceFn,
-        flat_args: list[FxValue],
-        flat_args_descs: list[AOTInput],
+        flat_args: FlatFxValues,
+        flat_args_descs: AOTInputList,
         aot_config: AOTConfig,
         *,
         fw_metadata: ViewAndMutationMeta,
-    ) -> tuple[TraceFn, list[FxValue], list[AOTInput], ViewAndMutationMeta]:
+    ) -> tuple[TraceFn, FlatFxValues, AOTInputList, ViewAndMutationMeta]:
         """
         Process the inputs to the compiler_fn. You can pass in extra metadata via kwargs.
         Args:
@@ -1308,7 +1333,7 @@ class InductorWrapper:
     def pre_compile(
         self,
         fw_module: torch.fx.GraphModule,
-        flat_args: list[Tensor],
+        flat_args: FlatTensorList,
         aot_config: AOTConfig,
         *,
         fw_metadata: ViewAndMutationMeta,
@@ -1368,15 +1393,15 @@ class AOTGraphCapture:  # Produced by aot_stage1_graph_capture
     # larger than the original flat_args as all tangents get inputs.  The
     # tuple organizes into primals and tangents.  When not autograd it's just
     # a plain list.
-    updated_flat_args: list[Any] | tuple[list[Any], list[Any]]
+    updated_flat_args: UpdatedFlatArgs
 
-    updated_flat_args_descs: list[AOTInput] | tuple[list[AOTInput], list[AOTInput]]
+    updated_flat_args_descs: UpdatedFlatArgsDescs
 
     # Metadata about subclass inputs/outputs in the graph trace.
     maybe_subclass_meta: Any
 
 
-FakifiedFlatArgs = NewType("FakifiedFlatArgs", list[Any])
+FakifiedFlatArgs = NewType("FakifiedFlatArgs", AnyList)
 
 
 TOutputCode = TypeVar("TOutputCode", bound="OutputCode")
@@ -1423,29 +1448,26 @@ class SerializableAOTDispatchCompiler(AOTDispatchCompiler):
 
 
 class FlatFn(Protocol):
-    def __call__(self, *args: FxValue) -> list[FxValue]: ...
+    def __call__(self, *args: FxValue) -> FlatFxValues: ...
 
 
 class TraceFn(Protocol):
-    def __call__(self, *args: FxValue) -> tuple[list[FxValue], list[AOTOutput]]: ...
+    def __call__(self, *args: FxValue) -> TraceFnResult: ...
 
 
 class PreppedForAutogradTraceFn(Protocol):
     def __call__(
         self,
         *args: FxValue,
-    ) -> tuple[tuple[list[FxValue], list[bool]], list[AOTOutput]]: ...
+    ) -> PreppedForAutogradTraceResult: ...
 
 
 class JointTraceFn(Protocol):
     handle: JointFnHandle
 
     def __call__(
-        self, primals: list[FxValue], tangents: list[FxValue]
-    ) -> tuple[
-        tuple[list[FxValue], list[Tensor | None]],
-        tuple[list[AOTOutput], list[AOTOutput | None]],
-    ]: ...
+        self, primals: FlatFxValues, tangents: FlatFxValues
+    ) -> JointTraceFnResult: ...
 
 
 @dataclass
@@ -1455,8 +1477,8 @@ class JointWithDescriptors:
 
     # The exact order parameters and buffers are expected to be passed into
     # the final compiled function.  Parameters before buffers.
-    params_spec: list[str]
-    buffers_spec: list[str]
+    params_spec: StringList
+    buffers_spec: StringList
 
     in_spec: pytree.TreeSpec
     out_spec: pytree.TreeSpec

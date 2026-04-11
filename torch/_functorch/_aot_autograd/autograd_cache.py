@@ -18,7 +18,7 @@ import time
 import traceback
 from copy import copy
 from typing import Any, TYPE_CHECKING
-from typing_extensions import override
+from typing_extensions import TypeAlias, override
 
 import torch
 from torch._dynamo.precompile_context import PrecompileContext
@@ -78,7 +78,18 @@ from .runtime_wrappers import (
     SerializableCompiledFunction,
     SubclassMeta,
 )
-from .schemas import AOTAutogradCacheInfo, AOTConfig, ViewAndMutationMeta  # noqa: F401
+from .schemas import (  # noqa: F401
+    AOTAutogradCacheInfo,
+    AOTConfig,
+    AnyCallable,
+    AnyList,
+    AnySequence,
+    AnyTuple,
+    IndexList,
+    StringAnyDict,
+    StringList,
+    ViewAndMutationMeta,
+)
 
 
 if TYPE_CHECKING:
@@ -89,6 +100,8 @@ if TYPE_CHECKING:
 
 
 log = logging.getLogger(__name__)
+
+StringListPair: TypeAlias = tuple[StringList, StringList]
 
 
 class BypassAOTAutogradCache(Exception):
@@ -166,7 +179,7 @@ def check_node_safe(node: Node) -> None:
         "einops.einops.repeat",
     )
 
-    def is_public_torch_api(target: Callable[..., Any]) -> bool:
+    def is_public_torch_api(target: AnyCallable) -> bool:
         # Don't blindly allow private functions in the torch namespace
         is_private = target.__name__.startswith("_")
 
@@ -174,7 +187,7 @@ def check_node_safe(node: Node) -> None:
             getattr(target, "__module__", None) in SAFE_TORCH_MODULES and not is_private
         )
 
-    def is_safe_torch_function(target: Callable[..., Any]) -> bool:
+    def is_safe_torch_function(target: AnyCallable) -> bool:
         """Allowlisted torch functions"""
         function_name = f"{target.__module__}.{target.__name__}"
         # Allow torch.autograd.function.FunctionCtx if custom autograd functions are allowed
@@ -192,7 +205,7 @@ def check_node_safe(node: Node) -> None:
             or function_name in torch._inductor.config.unsafe_marked_cacheable_functions
         )
 
-    def is_cacheable_function(target: Callable[..., Any]) -> bool:
+    def is_cacheable_function(target: AnyCallable) -> bool:
         if isinstance(target, (torch._ops.OpOverload, torch._ops.OpOverloadPacket)):
             return True
         if is_public_torch_api(target):
@@ -298,7 +311,7 @@ def check_cacheable(gm: torch.fx.GraphModule) -> None:
         check_cacheable(gm.saved_tensors_hooks_unpack_0)  # type: ignore[arg-type]
 
 
-def _get_context_fn_cache_hash(context_fn: Callable[..., Any]) -> str | None:
+def _get_context_fn_cache_hash(context_fn: AnyCallable) -> str | None:
     """
     Extract a cache hash from a context_fn used for selective activation checkpointing (SAC).
 
@@ -320,7 +333,7 @@ def _get_context_fn_cache_hash(context_fn: Callable[..., Any]) -> str | None:
     return None
 
 
-def _collect_context_fn_hashes(gm: torch.fx.GraphModule) -> list[str]:
+def _collect_context_fn_hashes(gm: torch.fx.GraphModule) -> StringList:
     """
     Collect cache hashes from all context_fn used in SAC HOPs within the graph module.
 
@@ -409,7 +422,7 @@ class AOTAutogradCacheDetails(FxGraphHashDetails):
     def get_triton_source_codes_from_gm(
         self,
         gm: torch.fx.GraphModule,
-    ) -> list[str]:
+    ) -> StringList:
         if not has_triton_package():
             raise AssertionError("Triton is not available")
 
@@ -453,7 +466,7 @@ class AOTAutogradCacheDetails(FxGraphHashDetails):
     def __init__(
         self,
         gm: torch.fx.GraphModule,
-        example_inputs: Sequence[Any],
+        example_inputs: AnySequence,
         aot_config: AOTConfig,
         fx_config: _CompileFxKwargs,
     ) -> None:
@@ -463,7 +476,7 @@ class AOTAutogradCacheDetails(FxGraphHashDetails):
         self.disable_amp = torch._C._is_any_autocast_enabled()
         self.deterministic_algorithms = torch.are_deterministic_algorithms_enabled()
         self.autograd_config = config.save_config()
-        self.saved_tensors_hooks_fx_wrap_cache_hashes: tuple[list[str], list[str]] = (
+        self.saved_tensors_hooks_fx_wrap_cache_hashes: StringListPair = (
             [],
             [],
         )
@@ -473,7 +486,7 @@ class AOTAutogradCacheDetails(FxGraphHashDetails):
         if hasattr(gm, "saved_tensors_hooks_pack_0"):
 
             def _add_wrapped_user_cache_hashes(
-                _gm: torch.fx.GraphModule, _l: list[str]
+                _gm: torch.fx.GraphModule, _l: StringList
             ) -> None:
                 for node in _gm.graph.nodes:
                     if node.meta and node.meta.get("is_wrapped", False):
@@ -490,7 +503,7 @@ class AOTAutogradCacheDetails(FxGraphHashDetails):
                 self.saved_tensors_hooks_fx_wrap_cache_hashes[1],
             )
 
-        self.sac_context_fn_hashes: list[str] = _collect_context_fn_hashes(gm)
+        self.sac_context_fn_hashes: StringList = _collect_context_fn_hashes(gm)
 
         # Note: We use the live config module, not self.autograd_config (the saved config),
         # because activation_memory_budget_runtime_estimator and activation_memory_budget_solver
@@ -624,7 +637,7 @@ class AOTAutogradCachePickler(FxGraphCachePickler):
 
     def _reduce_aot_config(
         self, aot_config: AOTConfig
-    ) -> tuple[Callable[..., Any], tuple[Any, ...]]:
+    ) -> tuple[AnyCallable, AnyTuple]:
         """
         Reduce the config to a stable key for caching.
         """
@@ -642,7 +655,7 @@ class AOTAutogradCachePickler(FxGraphCachePickler):
             ),
         )
 
-    def _reduce_tensor(self, t: torch.Tensor) -> tuple[Callable[..., Any], tuple[Any]]:
+    def _reduce_tensor(self, t: torch.Tensor) -> tuple[AnyCallable, tuple[Any]]:
         """
         Reduce the tensor to a stable key for caching.
         """
@@ -725,11 +738,11 @@ def create_fx_config(
 
 def autograd_cache_key(
     mod: torch.fx.GraphModule | torch._dynamo.utils.GmWrapper,
-    example_inputs: Sequence[Any],
+    example_inputs: AnySequence,
     config: AOTConfig,
     compiler_config_extra: CompilerConfigExtra | None = None,
     # TODO: add args and parameters
-) -> tuple[str, list[str]]:
+) -> tuple[str, StringList]:
     """
     Generate a unique hash of the FX graph for caching.
     """
@@ -768,7 +781,7 @@ def autograd_cache_key(
                     LazyString(lambda: "\n".join(debug_lines)),
                 )
             else:
-                debug_lines: list[str] = []
+                debug_lines: StringList = []
             return key, debug_lines
         except Exception:
             # If enable_aot_compile is set, we're in AOT precompile mode where we always
@@ -800,7 +813,7 @@ def sanitize_gm_for_cache(
     without these fields, and also guarantee they aren't used to affect the cache's output.
     """
     # Mapping from each field to a default value
-    IGNORED_FIELDS: dict[str, Any] = {
+    IGNORED_FIELDS: StringAnyDict = {
         # pyrefly: ignore [implicit-any]
         "meta": {},  # metadata used by export
         "compile_subgraph_reason": None,  # Used by dynamo only for logging, no change in inductor/autograd behavior
@@ -879,20 +892,20 @@ class AOTAutogradCache(GuardedCache[GenericAOTAutogradResult[Any, Any]]):
     @staticmethod
     def try_load(
         mod: torch.fx.GraphModule | torch._dynamo.utils.GmWrapper,
-        args: list[Any],
+        args: AnyList,
         aot_config: AOTConfig,
         compiler_config_extra: CompilerConfigExtra | None,
         local: bool,
         remote: bool,
         compile_region_name: str | None = None,
-    ) -> Callable[..., Any] | None:
+    ) -> AnyCallable | None:
         """
         Load a result from the cache, and reconstruct a runtime wrapper around the object
         """
         compiled_fn = None
-        cache_info: dict[str, Any] = {}
+        cache_info: StringAnyDict = {}
         cache_key = None
-        debug_lines: list[str] = []
+        debug_lines: StringList = []
         cache_event_time = time.time_ns()
         cache_state = None
         try:
@@ -1084,7 +1097,7 @@ class AOTAutogradCache(GuardedCache[GenericAOTAutogradResult[Any, Any]]):
             )
 
     @staticmethod
-    def evaluate_guards(guard_expr: str, hints: list[int] | list[torch.SymInt]) -> bool:
+    def evaluate_guards(guard_expr: str, hints: IndexList | list[torch.SymInt]) -> bool:
         if torch._inductor.config.unsafe_skip_cache_dynamic_shape_guards:
             return True
         shape_env = AOTAutogradCache._get_shape_env()
@@ -1098,8 +1111,8 @@ class AOTAutogradCache(GuardedCache[GenericAOTAutogradResult[Any, Any]]):
         key: str,
         local: bool,
         remote: bool,
-        args: list[Any],
-        cache_info: dict[str, Any],
+        args: AnyList,
+        cache_info: StringAnyDict,
         aot_config: AOTConfig | None,
     ) -> tuple[GenericAOTAutogradResult[Any, Any], bytes] | None:
         """Given a key generated by AOTAutogradCachePickler, look up its location in the cache."""
@@ -1294,12 +1307,12 @@ class AOTAutogradCache(GuardedCache[GenericAOTAutogradResult[Any, Any]]):
         dispatch_wrappers: list[CompilerWrapper],
         maybe_subclass_meta: SubclassMeta | None,
         num_fw_outs_saved_for_bw: int | None,
-        indices_of_inps_to_detach: list[int],
+        indices_of_inps_to_detach: IndexList,
         forward_time_taken_ns: int,
         backward_time_taken_ns: int,
         sanitized_aot_config: AOTConfig,
         guards_expr: str | None,
-        backward_state_indices: list[int] | None,
+        backward_state_indices: IndexList | None,
         num_symints_saved_for_bw: int | None,
         serialized_bw_module: SerializedGraphModule | None,
     ) -> GenericAOTAutogradResult[Any, Any]:

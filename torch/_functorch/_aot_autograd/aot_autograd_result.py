@@ -24,7 +24,8 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from copy import copy
 from dataclasses import dataclass
-from typing import Any, Generic, TYPE_CHECKING, TypeVar
+from typing import Any, Generic, TYPE_CHECKING
+from typing_extensions import TypeVar
 
 import torch
 from torch._dynamo.precompile_context import BackendCacheArtifact
@@ -49,7 +50,14 @@ from .runtime_wrappers import (
     SerializableCompiledFunction,
     SubclassMeta,
 )
-from .schemas import AOTAutogradCacheInfo  # noqa: F401
+from .schemas import (  # noqa: F401
+    AOTAutogradCacheInfo,
+    AnyCallable,
+    AnySequence,
+    AnyTuple,
+    IndexList,
+    StringList,
+)
 from .utils import simple_wraps
 
 
@@ -74,7 +82,7 @@ class InductorOutput(ABC, Generic[TOut]):
     def pre_save(self) -> None: ...
 
     @abstractmethod
-    def load(self, example_inputs: Sequence[Any]) -> TOut: ...
+    def load(self, example_inputs: AnySequence) -> TOut: ...
 
     @abstractmethod
     def post_compile(self, result: TOut, fx_config: _CompileFxKwargs) -> TOut: ...
@@ -100,7 +108,7 @@ class BundledOutputCodeLoadable(InductorOutput[TOutputCode], Generic[TOutputCode
         self.result = disk_result
         return
 
-    def load(self, example_inputs: Sequence[Any]) -> TOutputCode:
+    def load(self, example_inputs: AnySequence) -> TOutputCode:
         self.example_inputs = example_inputs
         return self.result
 
@@ -142,7 +150,7 @@ CompiledFxGraphLoadable: type[BundledOutputCodeLoadable[CompiledFxGraph]] = (
 
 @dataclass
 class FxGraphCacheLoadable(InductorOutput[CompiledFxGraph]):
-    fx_graph_cache_info: tuple[str, list[str]]
+    fx_graph_cache_info: tuple[str, StringList]
     fx_graph_guard_expr: str | None
 
     def pre_save(self) -> None:
@@ -151,7 +159,7 @@ class FxGraphCacheLoadable(InductorOutput[CompiledFxGraph]):
     def _is_backward(self) -> bool:
         return False
 
-    def load(self, example_inputs: Sequence[Any]) -> CompiledFxGraph:
+    def load(self, example_inputs: AnySequence) -> CompiledFxGraph:
         from .autograd_cache import FXGraphCacheMiss
 
         # [Note: AOTAutogradCache and FXGraphCache Guard interactions]
@@ -242,7 +250,7 @@ class CompiledForward(FxGraphCacheLoadable):
 @dataclass
 class GenericCompiledBackward(InductorOutput[TOut]):
     # Used by AOTDispatchAutograd.post_compile
-    backward_state_indices: list[int]
+    backward_state_indices: IndexList
     num_symints_saved_for_bw_: int
 
 
@@ -304,7 +312,7 @@ class BundledCompiledBackward(
 @dataclass
 class SerializedGraphModule:
     fn: Callable[[dict[Any, Any], str], torch.nn.Module]
-    args: tuple[Any, ...]
+    args: AnyTuple
 
     def __init__(self, gm: torch.fx.GraphModule) -> None:
         self.fn, self.args = gm.__reduce__()
@@ -365,7 +373,7 @@ class GenericAOTAutogradResult(Generic[TForward, TBackward]):
     num_fw_outs_saved_for_bw: int | None
 
     # Used by RuntimeWrapper
-    indices_of_inps_to_detach: list[int]
+    indices_of_inps_to_detach: IndexList
 
     # Time taken to trace/compile the forward
     # forward_time_taken includes AOTAutograd tracing time + inductor compilation time
@@ -641,7 +649,7 @@ class BundledAOTAutogradResult(
 
 def deserialize_bundled_cache_entry(
     entry: BundledAOTAutogradResult[Any],
-) -> Callable[..., Any]:
+) -> AnyCallable:
     from copy import deepcopy
 
     from torch._inductor.cudagraph_utils import BoxedDeviceIndex

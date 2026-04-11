@@ -26,12 +26,16 @@ from .collect_metadata_analysis import coerce_tangent_and_suggest_memory_format
 from .descriptors import AOTInput, InputMutationAOTOutput, TangentAOTInput
 from .schemas import (
     AOTConfig,
+    AnyList,
+    AOTInputList,
     BackwardSignature,
     GraphSignature,
+    IndexList,
     InputAliasInfo,
     MemoryFormatMeta,
     OutputAliasInfo,
     OutputType,
+    StringList,
     ViewAndMutationMeta,
 )
 from .utils import strict_zip
@@ -43,7 +47,7 @@ zip = strict_zip
 def remove_dupe_metadata(
     m: ViewAndMutationMeta,
     keep_arg_mask: list[bool],
-    add_dupe_map: list[int],
+    add_dupe_map: IndexList,
 ) -> ViewAndMutationMeta:
     if len(m.input_info) != len(keep_arg_mask):
         raise AssertionError(
@@ -127,12 +131,12 @@ def create_synthetic_base_metadata(
     # Maps each outer argument idx to its inner idx (or, if this outer arg is generated from a
     # synthetic base, you get a tuple of (i, TensorMeta), telling you the base tensor idx, and view metadata)
     synthetic_base_info: list[int | tuple[int, torch.Tensor]],
-    outer_args: list[Any],
-    inner_args: list[Any],
-    inner_args_desc: list[AOTInput],
-) -> tuple[ViewAndMutationMeta, list[int]]:
+    outer_args: AnyList,
+    inner_args: AnyList,
+    inner_args_desc: AOTInputList,
+) -> tuple[ViewAndMutationMeta, IndexList]:
     # maps inner arg indices to outer arg indices
-    synthetic_base_to_indices: dict[int, list[int]] = {}
+    synthetic_base_to_indices: dict[int, IndexList] = {}
     for inner_idx in range(len(inner_args)):
         outer_aliased_indices_of_current_base_arg = [
             outer_idx
@@ -313,7 +317,7 @@ def create_synthetic_base_metadata(
 
 
 def compute_overlapping_inputs(
-    aot_config: AOTConfig, fwd_inputs: list[Any], aliased_input_indices: list[int]
+    aot_config: AOTConfig, fwd_inputs: AnyList, aliased_input_indices: IndexList
 ) -> set[int]:
     num_aliases = len(aliased_input_indices)
 
@@ -393,11 +397,11 @@ def compute_overlapping_inputs(
     return actual_aliased_indices
 
 
-def _graph_input_names(gm: torch.fx.GraphModule) -> list[str]:
+def _graph_input_names(gm: torch.fx.GraphModule) -> StringList:
     return [node.name for node in gm.graph.find_nodes(op="placeholder")]
 
 
-def _graph_output_names(gm: torch.fx.GraphModule) -> list[Any]:
+def _graph_output_names(gm: torch.fx.GraphModule) -> AnyList:
     output_node = next(iter(reversed(gm.graph.nodes)))
     if output_node.op != "output" or len(output_node.args) != 1:
         raise AssertionError(
@@ -415,8 +419,8 @@ def create_graph_signature(
     *,
     user_args_flat: list[Tensor],
     params_and_buffers_flat: list[Tensor],
-    param_names: list[str],
-    buffer_names: list[str],
+    param_names: StringList,
+    buffer_names: StringList,
     trace_joint: bool,
     num_user_fw_outs: int | None,
     loss_index: int | None,

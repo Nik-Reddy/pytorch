@@ -51,6 +51,10 @@ from .functional_utils import (
     was_inductor_storage_resized,
 )
 from .schemas import (
+    AnyCallable,
+    AnyList,
+    AOTInputList,
+    IndexList,
     InputAliasInfo,
     MemoryFormatMeta,
     MutationType,
@@ -82,7 +86,7 @@ static_input_logger = getArtifactLogger("torch._dynamo", "cudagraph_static_input
 # Coercing and collecting traced tangents memory format in one recursive traversal
 def coerce_tangent_and_suggest_memory_format(
     x: Tensor,
-) -> tuple[Any, MemoryFormatMeta | list[Any] | None, bool]:
+) -> tuple[Any, MemoryFormatMeta | AnyList | None, bool]:
     updated = False
     if not isinstance(x, Tensor):
         return x, None, updated
@@ -164,12 +168,12 @@ def coerce_tangent_and_suggest_memory_format(
 #   Specifically, aliased outputs from the forward get regenerated, and don't participate
 #   in the compiled backward function.
 def run_functionalized_fw_and_collect_metadata(
-    f: Callable[..., Any],
+    f: AnyCallable,
     *,
-    flat_args_descs: list[AOTInput],
+    flat_args_descs: AOTInputList,
     keep_input_mutations: bool,
     # Note: this is guaranteed to be set when running under dynamo
-    static_input_indices: list[int] | None = None,
+    static_input_indices: IndexList | None = None,
     pre_dispatch: bool = False,
 ) -> Callable[..., ViewAndMutationMeta]:
     memo: dict[Tensor, Tensor] = {}
@@ -425,7 +429,7 @@ def run_functionalized_fw_and_collect_metadata(
         # maps the id of an intermediate base to its index in the output of the compiled forward
         intermediate_base_tensor_id_to_output_idx: dict[int, int] = {}
         intermediate_bases: list[torch.Tensor] = []
-        intermediate_bases_descs: list[AOTInput] = []
+        intermediate_bases_descs: AOTInputList = []
         # Why Do We Care If Storage Changed?
         # It's important to understand the implications of storage changes in complex scenarios. Take this example:
         #

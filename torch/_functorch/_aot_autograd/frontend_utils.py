@@ -16,7 +16,14 @@ from torch.utils._python_dispatch import is_traceable_wrapper_subclass
 
 from .. import config
 from .descriptors import BufferAOTInput, DifferentiableAOTInput, ParamAOTInput
-from .schemas import AOTConfig, FakifiedFlatArgs
+from .schemas import (
+    AOTConfig,
+    AnyList,
+    FakifiedFlatArgs,
+    IndexList,
+    StringAnyDict,
+    StringList,
+)
 
 
 if TYPE_CHECKING:
@@ -29,12 +36,12 @@ static_inputs_log = torch._logging.getArtifactLogger(
 
 
 def process_inputs(
-    flat_args: list[Any],
+    flat_args: AnyList,
     aot_config: AOTConfig,
     fake_mode: FakeTensorMode,
     shape_env: ShapeEnv | None,
     ignore_shape_env: bool = False,
-) -> tuple[FakifiedFlatArgs, list[int]]:
+) -> tuple[FakifiedFlatArgs, IndexList]:
     """Convert real tensor inputs into fake tensors for AOT autograd tracing.
 
     Called at compile time (not runtime) to produce the fake inputs that AOT
@@ -69,7 +76,7 @@ def process_inputs(
     except ImportError:
         AsyncCollectiveTensor = None
 
-    act_input_indices: list[int] = []
+    act_input_indices: IndexList = []
     if AsyncCollectiveTensor is not None:
         for i, a in enumerate(flat_args):
             if isinstance(a, AsyncCollectiveTensor):
@@ -167,7 +174,7 @@ def process_inputs(
 
 
 def construct_fake_mode(
-    flat_args: list[Any], aot_config: AOTConfig
+    flat_args: AnyList, aot_config: AOTConfig
 ) -> tuple[FakeTensorMode, ShapeEnv | None]:
     fake_mode = detect_fake_mode(flat_args)
     if fake_mode is None:
@@ -183,7 +190,7 @@ def _try_get_metadata_from_dynamo(
     param_keys: KeysView[str],
     full_args_num: int,
     full_args_descs: list[DifferentiableAOTInput],
-) -> tuple[list[torch._guards.Source | None] | None, list[int]]:
+) -> tuple[list[torch._guards.Source | None] | None, IndexList]:
     """
     Metadata is forwarded from Dynamo to AOTDispatch via special fields on GraphModule.
     We first verify that `mod` does come from Dynamo, then we handle cases where
@@ -311,11 +318,11 @@ def _detect_attribute_assignment(mod: torch.nn.Module) -> Generator[None, None, 
         *NN_MODULE_LAZY_STD_ATTRS,
     }
 
-    def _get_attributes(mod: torch.nn.Module) -> dict[str, Any]:
+    def _get_attributes(mod: torch.nn.Module) -> StringAnyDict:
         # return any attributes of a module that are not standard attributes
         return {k: v for k, v in mod.__dict__.items() if k not in STD_ATTRS}
 
-    def _get_all_module_attributes(mod: torch.nn.Module) -> dict[str, dict[str, Any]]:
+    def _get_all_module_attributes(mod: torch.nn.Module) -> dict[str, StringAnyDict]:
         # return attributes from all modules and submodules
         result = {}
         for name, submodule in mod.named_modules():
@@ -323,7 +330,7 @@ def _detect_attribute_assignment(mod: torch.nn.Module) -> Generator[None, None, 
         return result
 
     def _restore_all_module_attributes(
-        mod: torch.nn.Module, snapshot: dict[str, dict[str, Any]]
+        mod: torch.nn.Module, snapshot: dict[str, StringAnyDict]
     ) -> None:
         # restore attributes to all modules and submodules
         for name, submodule in mod.named_modules():
@@ -343,8 +350,8 @@ def _detect_attribute_assignment(mod: torch.nn.Module) -> Generator[None, None, 
         # to detect which tensor attributes were assigned
 
         def _collect_assigned_tensor_attributes(
-            snapshot: dict[str, dict[str, Any]], new_attrs: dict[str, dict[str, Any]]
-        ) -> list[str]:
+            snapshot: dict[str, StringAnyDict], new_attrs: dict[str, StringAnyDict]
+        ) -> StringList:
             assigned_tensor_attributes = []
 
             def _compare_values(path: str, old_val: Any, new_val: Any) -> None:

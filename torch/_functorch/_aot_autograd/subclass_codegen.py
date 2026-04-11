@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 import torch
 from torch import SymInt
 
-from .schemas import OpaqueMeta, PlainTensorMeta, SubclassCreationMeta
+from .schemas import IndexList, OpaqueMeta, PlainTensorMeta, StringList, SubclassCreationMeta
 
 
 log = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ class _CodegenState:
     """Accumulates lines of generated source and global bindings."""
 
     def __init__(self) -> None:
-        self.lines: list[str] = []
+        self.lines: StringList = []
         self.globals: dict[str, object] = {}
         self._name_counter: int = 0
 
@@ -134,11 +134,11 @@ def _concrete_value(val: None | int | SymInt) -> int:
 def _codegen_wrap_subclass(
     state: _CodegenState,
     meta: SubclassCreationMeta,
-    out_idx_ref: list[int],
+    out_idx_ref: IndexList,
 ) -> str:
     """Emit code to reconstruct one subclass output. Returns the variable name."""
     inner_dict_var = state.fresh_name("_out_inner")
-    entries: list[str] = []
+    entries: StringList = []
 
     for attr, attr_meta in meta.attrs.items():
         match attr_meta:
@@ -159,7 +159,7 @@ def _codegen_wrap_subclass(
     def _build_tuple(
         outer: Iterable[None | int | SymInt], placeholders: list[bool]
     ) -> str:
-        parts: list[str] = []
+        parts: StringList = []
         for val, is_sym in zip(outer, placeholders):
             if is_sym:
                 idx = out_idx_ref[0]
@@ -191,14 +191,14 @@ def _codegen_wrap_subclass(
 def _emit_output_wrapping(
     state: _CodegenState,
     out_metas: list[PlainTensorMeta | SubclassCreationMeta],
-) -> tuple[list[str], int]:
+) -> tuple[StringList, int]:
     """Emit wrapping code for output metas.
 
     Returns (result_exprs, num_args_tallied) where result_exprs are Python
     expression strings referencing each wrapped output.
     """
     out_idx_ref = [0]
-    result_exprs: list[str] = []
+    result_exprs: StringList = []
     num_args_tallied = 0
 
     for meta in out_metas:
@@ -251,7 +251,7 @@ def _codegen_subclass_wrapper_source(
     out_metas: list[PlainTensorMeta | SubclassCreationMeta],
     num_fw_outs_saved_for_bw: int | None,
     frozen_inp_indices: frozenset[int] = frozenset(),
-    act_input_indices: list[int] | None = None,
+    act_input_indices: IndexList | None = None,
 ) -> tuple[str, dict[str, object]]:
     """Generate source and globals for a subclass wrapper.
 
@@ -381,7 +381,7 @@ def codegen_subclass_wrapper(
     out_metas: list[PlainTensorMeta | SubclassCreationMeta],
     num_fw_outs_saved_for_bw: int | None,
     frozen_inp_indices: frozenset[int] = frozenset(),
-    act_input_indices: list[int] | None = None,
+    act_input_indices: IndexList | None = None,
 ) -> Callable[..., object]:
     """Generate a specialized wrapper function for subclass unwrap/wrap."""
     source, globals_dict = _codegen_subclass_wrapper_source(
