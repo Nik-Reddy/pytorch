@@ -15,7 +15,13 @@ from collections.abc import Callable, Iterable
 import torch
 from torch import SymInt
 
-from .schemas import IndexList, OpaqueMeta, PlainTensorMeta, StringList, SubclassCreationMeta
+from .schemas import (
+    IndexList,
+    OpaqueMeta,
+    PlainTensorMeta,
+    StringList,
+    SubclassCreationMeta,
+)
 
 
 log = logging.getLogger(__name__)

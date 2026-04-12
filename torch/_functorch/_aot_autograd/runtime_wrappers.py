@@ -72,11 +72,11 @@ from .input_output_analysis import (
 )
 from .logging_utils import describe_input, format_guard_bug_msg, track_graph_compiling
 from .schemas import (
-    AOTConfig,
     AnyCallable,
     AnyList,
     AnySequence,
     AnyTuple,
+    AOTConfig,
     AOTInputList,
     AOTOutputList,
     CompilerWrapper,
@@ -943,9 +943,7 @@ class FakifiedOutWrapper(InductorWrapper):
         return out
 
     # To be called post compile
-    def set_fwd_output_strides(
-        self, fwd_output_strides: OutputStrideMetadata
-    ) -> None:
+    def set_fwd_output_strides(self, fwd_output_strides: OutputStrideMetadata) -> None:
         self.fwd_output_strides = fwd_output_strides
 
     def post_compile(

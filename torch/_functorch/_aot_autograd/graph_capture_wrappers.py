@@ -73,9 +73,9 @@ from .functional_utils import (
 )
 from .logging_utils import setup_stacktrace_preservation_hooks
 from .schemas import (
-    AOTConfig,
     AnyCallable,
     AnyTuple,
+    AOTConfig,
     AOTInputList,
     AOTOutputList,
     FlatFxValues,
@@ -84,10 +84,10 @@ from .schemas import (
     JointTraceFn,
     JointTraceFnResult,
     MutationType,
-    OutputType,
     OptionalAOTOutputList,
-    PreppedForAutogradTraceResult,
+    OutputType,
     PreppedForAutogradTraceFn,
+    PreppedForAutogradTraceResult,
     SubclassMeta,
     SubclassTracingInfo,
     TraceFn,
@@ -312,9 +312,7 @@ def create_joint(
     # post_forward
     # NB: this type is inaccurate when primals_descs is None
     @simple_wraps(fn)
-    def inner_fn(
-        primals: FlatFxValues, tangents: FlatFxValues
-    ) -> JointTraceFnResult:
+    def inner_fn(primals: FlatFxValues, tangents: FlatFxValues) -> JointTraceFnResult:
         outs_descs = None
         if primals_descs is None:
             outs, tangent_mask = fn(*primals)
@@ -1400,9 +1398,7 @@ def aot_dispatch_subclass(
 
     if is_joint_structure:
         primals_wrapped: FlatFxValues = typing.cast(FlatFxValues, args[0])
-        primals_wrapped_descs: AOTInputList = typing.cast(
-            AOTInputList, args_descs[0]
-        )
+        primals_wrapped_descs: AOTInputList = typing.cast(AOTInputList, args_descs[0])
         tangents_wrapped: FlatFxValues = typing.cast(FlatFxValues, args[1])
         tangents_wrapped_descs: AOTInputList = typing.cast(
             AOTInputList, args_descs[1]

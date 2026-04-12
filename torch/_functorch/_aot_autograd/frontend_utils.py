@@ -17,8 +17,8 @@ from torch.utils._python_dispatch import is_traceable_wrapper_subclass
 from .. import config
 from .descriptors import BufferAOTInput, DifferentiableAOTInput, ParamAOTInput
 from .schemas import (
-    AOTConfig,
     AnyList,
+    AOTConfig,
     FakifiedFlatArgs,
     IndexList,
     StringAnyDict,

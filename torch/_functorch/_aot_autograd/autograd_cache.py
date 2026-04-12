@@ -79,12 +79,12 @@ from .runtime_wrappers import (
     SubclassMeta,
 )
 from .schemas import (  # noqa: F401
-    AOTAutogradCacheInfo,
-    AOTConfig,
     AnyCallable,
     AnyList,
     AnySequence,
     AnyTuple,
+    AOTAutogradCacheInfo,
+    AOTConfig,
     IndexList,
     StringAnyDict,
     StringList,
@@ -635,9 +635,7 @@ class AOTAutogradCachePickler(FxGraphCachePickler):
         )
         return hashlib.blake2b(cache_data, digest_size=16).hexdigest()
 
-    def _reduce_aot_config(
-        self, aot_config: AOTConfig
-    ) -> tuple[AnyCallable, AnyTuple]:
+    def _reduce_aot_config(self, aot_config: AOTConfig) -> tuple[AnyCallable, AnyTuple]:
         """
         Reduce the config to a stable key for caching.
         """

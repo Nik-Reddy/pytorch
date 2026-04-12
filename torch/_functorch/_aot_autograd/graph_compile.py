@@ -1151,9 +1151,7 @@ def maybe_log_graph(
         )
 
 
-def create_wrap_fn(
-    fn: AnyCallable, args: AnyTuple
-) -> tuple[AnyCallable, AnyTuple]:
+def create_wrap_fn(fn: AnyCallable, args: AnyTuple) -> tuple[AnyCallable, AnyTuple]:
     from torch.fx.experimental.proxy_tensor import maybe_enable_thunkify
 
     from .functional_utils import from_fun, has_data_mutation, to_fun

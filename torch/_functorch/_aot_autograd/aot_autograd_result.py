@@ -57,10 +57,10 @@ if TYPE_CHECKING:
     from torch._inductor.compile_fx import _CompileFxKwargs
 
     from .schemas import (
-        AOTConfig,
         AnyCallable,
         AnySequence,
         AnyTuple,
+        AOTConfig,
         IndexList,
         StringList,
         ViewAndMutationMeta,
