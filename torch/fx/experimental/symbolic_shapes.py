@@ -258,8 +258,8 @@ SympyExprList: TypeAlias = list[sympy.Expr]
 MaybeFxNode: TypeAlias = torch.fx.Node | None
 MaybeSympyBasic: TypeAlias = sympy.Basic | None
 IntLikeSequence: TypeAlias = "Sequence[IntLikeType]"
-# Preserve the historical public annotation spelling for BC checks.
-DimList: TypeAlias = list
+# Preserve the historical generic alias spelling for BC checks and pyrefly.
+DimList = list
 SymbolBindings: TypeAlias = dict[sympy.Symbol, int]
 MaybeSymbolicContext: TypeAlias = "SymbolicContext | None"
 MaybeStatelessSymbolicContext: TypeAlias = "StatelessSymbolicContext | None"
