@@ -1,7 +1,6 @@
 # mypy: allow-untyped-defs
 import abc
 import typing as t
-
 from typing import TypeAlias
 
 import torch
@@ -138,7 +137,9 @@ class OperatorSupport(OperatorSupportBase):
 # and composing them into more complex ones
 # ======================================================================
 
-IsNodeSupported: TypeAlias = t.Callable[[t.Mapping[str, torch.nn.Module], torch.fx.Node], bool]
+IsNodeSupported: TypeAlias = t.Callable[
+    [t.Mapping[str, torch.nn.Module], torch.fx.Node], bool
+]
 
 
 @compatibility(is_backward_compatible=False)

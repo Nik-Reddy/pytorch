@@ -258,6 +258,8 @@ SympyExprList: TypeAlias = list[sympy.Expr]
 MaybeFxNode: TypeAlias = torch.fx.Node | None
 MaybeSympyBasic: TypeAlias = sympy.Basic | None
 IntLikeSequence: TypeAlias = "Sequence[IntLikeType]"
+# Preserve the historical public annotation spelling for BC checks.
+DimList: TypeAlias = list
 SymbolBindings: TypeAlias = dict[sympy.Symbol, int]
 MaybeSymbolicContext: TypeAlias = "SymbolicContext | None"
 MaybeStatelessSymbolicContext: TypeAlias = "StatelessSymbolicContext | None"
@@ -2227,10 +2229,10 @@ class StatelessSymbolicContext(SymbolicContext, Generic[_P1, _T1]):
     This will cause fresh symbols to be allocated
     """
 
-    dynamic_sizes: list[DimDynamic]
-    dynamic_strides: list[DimDynamic] = None  # type: ignore[assignment]
-    constraint_sizes: list[DimConstraint] = None  # type: ignore[assignment]
-    constraint_strides: list[DimConstraint] = None  # type: ignore[assignment]
+    dynamic_sizes: DimList[DimDynamic]
+    dynamic_strides: DimList[DimDynamic] = None  # type: ignore[assignment]
+    constraint_sizes: DimList[DimConstraint] = None  # type: ignore[assignment]
+    constraint_strides: DimList[DimConstraint] = None  # type: ignore[assignment]
     specialize_on: list[list[Callable[_P1, _T1]]] | None = None
     # If the tensor is a view, this should be populated for the base. It contains
     # information on how to allocate symbols when recursively fakeifying the base
@@ -4928,9 +4930,7 @@ class ShapeEnv:
         ex_size: IntLikeSequence,
         ex_stride: IntLikeSequence,
         dynamic_strides: Sequence[DimDynamic],
-        constraint_strides: Sequence[
-            DimConstraint
-        ],
+        constraint_strides: Sequence[DimConstraint],
         are_sizes_static: bool,
         symbolic_context: SymbolicContext,
     ) -> SympyExprList:

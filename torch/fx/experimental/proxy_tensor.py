@@ -19,15 +19,7 @@ from collections import defaultdict, OrderedDict
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import _GeneratorContextManager, contextmanager, ExitStack, nullcontext
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Concatenate,
-    overload,
-    Protocol,
-    TYPE_CHECKING,
-    TypeAlias,
-    Union,
-)
+from typing import Any, Concatenate, overload, Protocol, TYPE_CHECKING, TypeAlias, Union
 from typing_extensions import ParamSpec, Self, TypeVar, TypeVarTuple, Unpack
 from weakref import WeakKeyDictionary
 
@@ -952,9 +944,7 @@ def track_tensor_tree(
             if isinstance(proxy, fx.Proxy):
                 set_meta(proxy, e)
 
-            def get_constant(
-                c: MaybeNestedTensors, idx: int
-            ) -> MaybeNestedTensors:
+            def get_constant(c: MaybeNestedTensors, idx: int) -> MaybeNestedTensors:
                 if c is None:
                     return None
                 else:
