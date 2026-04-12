@@ -1400,9 +1400,7 @@ def aot_dispatch_subclass(
         primals_wrapped: FlatFxValues = typing.cast(FlatFxValues, args[0])
         primals_wrapped_descs: AOTInputList = typing.cast(AOTInputList, args_descs[0])
         tangents_wrapped: FlatFxValues = typing.cast(FlatFxValues, args[1])
-        tangents_wrapped_descs: AOTInputList = typing.cast(
-            AOTInputList, args_descs[1]
-        )
+        tangents_wrapped_descs: AOTInputList = typing.cast(AOTInputList, args_descs[1])
 
         # Add extra symints (size/strides) as input to the forward graph
         primals_unwrapped_pair = unwrap_tensor_subclasses(
