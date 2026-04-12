@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from copy import copy
 from dataclasses import dataclass
 from typing import Any, Generic, TYPE_CHECKING
@@ -50,21 +50,22 @@ from .runtime_wrappers import (
     SerializableCompiledFunction,
     SubclassMeta,
 )
-from .schemas import (  # noqa: F401
-    AOTAutogradCacheInfo,
-    AnyCallable,
-    AnySequence,
-    AnyTuple,
-    IndexList,
-    StringList,
-)
+from .schemas import AOTAutogradCacheInfo
 from .utils import simple_wraps
 
 
 if TYPE_CHECKING:
     from torch._inductor.compile_fx import _CompileFxKwargs
 
-    from .schemas import AOTConfig, ViewAndMutationMeta
+    from .schemas import (
+        AOTConfig,
+        AnyCallable,
+        AnySequence,
+        AnyTuple,
+        IndexList,
+        StringList,
+        ViewAndMutationMeta,
+    )
 
 log = logging.getLogger(__name__)
 aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")

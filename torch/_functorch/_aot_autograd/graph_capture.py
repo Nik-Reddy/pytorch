@@ -5,7 +5,6 @@ pathways, taking into account the AOTConfig and the collected ViewAndMutationMet
 
 import contextlib
 import dataclasses
-from collections.abc import Callable
 from typing import Any
 
 import torch
@@ -19,7 +18,7 @@ from torch.fx.experimental.proxy_tensor import make_fx
 from torchgen.utils import dataclass_repr
 
 from .. import config
-from .descriptors import AOTInput, BackwardTokenAOTInput
+from .descriptors import BackwardTokenAOTInput
 from .functional_utils import (
     assert_functional_graph,
     propagate_input_mutation_stacktraces,
@@ -38,11 +37,8 @@ from .schemas import (
     AnyList,
     AOTInputList,
     FlatFxValues,
-    FxValue,
     SubclassMeta,
     TraceFn,
-    UpdatedFlatArgs,
-    UpdatedFlatArgsDescs,
     ViewAndMutationMeta,
 )
 from .streams import (

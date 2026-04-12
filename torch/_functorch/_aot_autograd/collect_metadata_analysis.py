@@ -32,7 +32,6 @@ from torch.utils._python_dispatch import (
 )
 
 from .descriptors import (
-    AOTInput,
     AOTOutput,
     InputMutationAOTOutput,
     IntermediateBaseAOTOutput,

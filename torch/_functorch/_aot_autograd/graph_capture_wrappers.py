@@ -45,7 +45,6 @@ from torch.utils._pytree import TreeSpec
 from .. import config
 from .collect_metadata_analysis import run_functionalized_fw_and_collect_metadata
 from .descriptors import (
-    AOTInput,
     AOTOutput,
     BackwardTokenAOTOutput,
     ForwardTokenAOTInput,
@@ -79,7 +78,6 @@ from .schemas import (
     AnyTuple,
     AOTInputList,
     AOTOutputList,
-    BoolList,
     FlatFxValues,
     FxValue,
     InputAliasInfo,
@@ -88,7 +86,6 @@ from .schemas import (
     MutationType,
     OutputType,
     OptionalAOTOutputList,
-    OptionalTensorList,
     PreppedForAutogradTraceResult,
     PreppedForAutogradTraceFn,
     SubclassMeta,
@@ -96,7 +93,6 @@ from .schemas import (
     TraceFn,
     TraceFnResult,
     UpdatedFlatArgsDescs,
-    UpdatedFlatArgs,
     ViewAndMutationMeta,
 )
 from .subclass_utils import (

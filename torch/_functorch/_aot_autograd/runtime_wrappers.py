@@ -58,7 +58,6 @@ from .. import config
 from .collect_metadata_analysis import run_functionalized_fw_and_collect_metadata
 from .descriptors import (
     AOTInput,
-    AOTOutput,
     DummyAOTInput,
     MetadataMutationAOTOutput,
     SyntheticBaseAOTInput,

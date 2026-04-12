@@ -11,7 +11,6 @@ In particular, the following analyses are provided:
 
 import contextlib
 import itertools
-from typing import Any
 
 import torch
 import torch.utils._pytree as pytree
@@ -23,7 +22,7 @@ from torch._subclasses.functional_tensor import FunctionalTensor
 from torch.fx.experimental.symbolic_shapes import is_concrete_int
 
 from .collect_metadata_analysis import coerce_tangent_and_suggest_memory_format
-from .descriptors import AOTInput, InputMutationAOTOutput, TangentAOTInput
+from .descriptors import InputMutationAOTOutput, TangentAOTInput
 from .schemas import (
     AOTConfig,
     AnyList,

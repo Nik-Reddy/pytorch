@@ -93,7 +93,7 @@ from .schemas import (  # noqa: F401
 
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Sequence
+    from collections.abc import Generator
 
     from torch._inductor.compile_fx import _CompileFxKwargs, CompilerConfigExtra
     from torch._inductor.remote_cache import JsonDataTy, RemoteCache

@@ -55,7 +55,7 @@ from .autograd_cache import (
     should_bundle_autograd_cache,
     should_use_remote_autograd_cache,
 )
-from .descriptors import AOTOutput, PlainAOTOutput
+from .descriptors import PlainAOTOutput
 from .graph_capture import aot_dispatch_autograd_graph, aot_dispatch_base_graph
 from .logging_utils import track_graph_compiling
 from .runtime_wrappers import (
