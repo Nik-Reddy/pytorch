@@ -25,9 +25,10 @@ from typing import (
     overload,
     Protocol,
     TYPE_CHECKING,
+    TypeAlias,
     Union,
 )
-from typing_extensions import ParamSpec, Self, TypeAlias, TypeVar, TypeVarTuple, Unpack
+from typing_extensions import ParamSpec, Self, TypeVar, TypeVarTuple, Unpack
 from weakref import WeakKeyDictionary
 
 import torch
@@ -128,20 +129,10 @@ U = TypeVar("U")
 _P = ParamSpec("_P")
 R = TypeVar("R")
 _Ts = TypeVarTuple("_Ts")
-AnyCallable: TypeAlias = Callable[..., Any]
-DecompositionTable: TypeAlias = Mapping[OpOverload, AnyCallable]
+DecompositionTable: TypeAlias = Mapping[OpOverload, Callable[..., Any]]
 MaybeDecompositionTable: TypeAlias = DecompositionTable | None
-CallablePToR: TypeAlias = Callable[_P, R]
-ObjectTuple: TypeAlias = tuple[object, ...]
-ObjectDict: TypeAlias = dict[str, object]
-MaybeObjectDict: TypeAlias = ObjectDict | None
 TensorMetaTuple: TypeAlias = tuple[torch._C._TensorMeta, ...]
-MaybeTensor: TypeAlias = Tensor | None
-TransformResult: TypeAlias = R | U
 MaybeNestedTensors: TypeAlias = "_NestedTensors | None"
-MaybeOpOverload: TypeAlias = OpOverload | None
-MaybeMakefxTracer: TypeAlias = "_MakefxTracer | None"
-RootModuleOrCallable: TypeAlias = Module | AnyCallable
 
 # We currently convert all SymInt to proxies before we use them.
 # This could plausibly be handled at the Dynamo level.
@@ -165,7 +156,7 @@ pytree.register_pytree_node(
 _pytree_subclasses_that_lose_info = {torch.Size: tuple}
 
 
-def fake_signature(fn: CallablePToR, nargs: int) -> CallablePToR:
+def fake_signature(fn: Callable[_P, R], nargs: int) -> Callable[_P, R]:
     """FX gets confused by varargs, de-confuse it"""
     argnames = ",".join(f"arg{i}" for i in range(nargs))
     return eval(f"lambda {argnames}: fn({argnames})", {"fn": fn})
@@ -400,7 +391,7 @@ def get_proxy_slot(
     tracer: _ProxyTracer,
     default: U,
     transform: Callable[[_ProxyTensor], R],
-) -> TransformResult: ...
+) -> R | U: ...
 
 
 @overload
@@ -424,7 +415,7 @@ def get_proxy_slot(
     tracer: _ProxyTracer,
     default: U,
     transform: Callable[[Proxy], R],
-) -> TransformResult: ...
+) -> R | U: ...
 
 
 @overload
@@ -456,7 +447,7 @@ def get_proxy_slot(
     tracer: _ProxyTracer,
     default: U,
     transform: Callable[[_PySymProxyType], R],
-) -> TransformResult: ...
+) -> R | U: ...
 
 
 # the default argument is what to return if the slot is not set.
@@ -541,7 +532,7 @@ def _get_proxies(t: torch.Tensor) -> list[Proxy]:
 
 
 @functools.cache
-def _sympy_handlers() -> dict[type[sympy.Expr], AnyCallable]:
+def _sympy_handlers() -> dict[type[sympy.Expr], Callable[..., Any]]:
     """
     Returns a dict mapping sympy types to Python callables
     (e.g. ``sympy.Mul`` -> ``operator.mul``, ``sympy.Add`` -> ``torch.sym_sum``).
@@ -655,7 +646,7 @@ def _build_proxy_for_sym_expr(
             return None
         args.append(arg_value)
 
-    func: MaybeOpOverload = _sympy_handlers().get(expr.func)  # type: ignore[assignment]
+    func: OpOverload | None = _sympy_handlers().get(expr.func)  # type: ignore[assignment]
     if not func:
         return None
 
@@ -666,7 +657,7 @@ def _build_proxy_for_sym_expr(
     return out
 
 
-def snapshot_fake(val: Tensor, include_real: bool = False) -> MaybeTensor:
+def snapshot_fake(val: Tensor, include_real: bool = False) -> Tensor | None:
     # val.detach() will also eventually call fast_detach(),
     # but this saves us a full trip into __torch_dispatch__
     # (snapshot_fake is called a lot)
@@ -809,7 +800,7 @@ def set_meta(proxy: Proxy, val: _ExtractValType) -> Proxy:
 
 
 def thunkify(
-    tracer: _ProxyTracer, f: CallablePToR, *args: _P.args, **kwargs: _P.kwargs
+    tracer: _ProxyTracer, f: Callable[_P, R], *args: _P.args, **kwargs: _P.kwargs
 ) -> Thunk[R]:
     """
     Delays computation of f until it's called again
@@ -823,7 +814,7 @@ def thunkify(
 
 
 def track_tensor(
-    tensor: Tensor, proxy: Proxy, *, constant: MaybeTensor, tracer: _ProxyTracer
+    tensor: Tensor, proxy: Proxy, *, constant: Tensor | None, tracer: _ProxyTracer
 ) -> None:
     def try_set_proxy_slot(
         outer_s: IntLikeType,
@@ -1011,7 +1002,7 @@ def track_tensor_tree(
 @dataclass
 class _ProxyTensor:
     proxy: Proxy
-    constant: MaybeTensor
+    constant: Tensor | None
 
 
 def fetch_sym_proxy(
@@ -1101,8 +1092,8 @@ def _maybe_record_pointwise_barrier(
 
 
 def _fetch_proxies_and_all_constant_flag(
-    flat_args_kwargs: list[object] | ObjectTuple, tracer: _ProxyTracer
-) -> tuple[list[object], ObjectTuple, bool]:
+    flat_args_kwargs: list[object] | tuple[object, ...], tracer: _ProxyTracer
+) -> tuple[list[object], tuple[object, ...], bool]:
     """
     Given flat arguments, fetch the proxies and whether they are all constants.
     This is later used in proxy_call or when someone is trying to stitch together
@@ -1147,8 +1138,8 @@ def proxy_call(
     proxy_mode: ProxyTorchDispatchMode,
     func: OpOverload,
     pre_dispatch: bool,
-    args: ObjectTuple,
-    kwargs: ObjectDict,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
 ) -> object:
     unrecognized_types: list[type] = []
     flat_args_kwargs, spec = pytree.tree_flatten((args, kwargs))
@@ -1411,7 +1402,7 @@ class PythonKeyTracer(Tracer):
     symnode_tracker: _SymNodeDict
     sympy_expr_tracker: dict[sympy.Symbol, _SympyExprTrackerValue]
     tensor_tracker: MutableMapping[Tensor, _ProxyTensor]
-    torch_fn_metadata: MaybeOpOverload
+    torch_fn_metadata: OpOverload | None
     torch_fn_counts: dict[OpOverload, int]
     enable_thunkify: bool = False
 
@@ -1425,7 +1416,7 @@ class PythonKeyTracer(Tracer):
     def call_module(
         self,
         m: Module,
-        forward: AnyCallable,
+        forward: Callable[..., Any],
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
     ) -> Any:
@@ -1671,7 +1662,7 @@ def _make_temp_remove_mode_context_manager(
 
 @torch._disable_dynamo
 def dispatch_trace(
-    root: RootModuleOrCallable,
+    root: Module | Callable,
     tracer: Tracer,
     concrete_args: tuple[Any, ...] | None = None,
 ) -> GraphModule:
@@ -1719,7 +1710,7 @@ def wrap_key(
     tensors: tuple[Unpack[_Ts]],
     tracer: _ProxyTracer,
     pre_dispatch: bool,
-) -> CallablePToR:
+) -> Callable[_P, R]:
     flat_tensors, _tensors_spec = pytree.tree_flatten(tensors)
 
     @functools.wraps(f)
@@ -1793,8 +1784,8 @@ class TorchFunctionMetadataMode(TorchFunctionMode):
         self,
         func: OpOverload,
         types: TensorMetaTuple,
-        args: ObjectTuple = (),
-        kwargs: MaybeObjectDict = None,
+        args: tuple[object, ...] = (),
+        kwargs: dict[str, object] | None = None,
     ) -> object:
         kwargs = kwargs or {}
         # pyrefly: ignore [bad-assignment]
@@ -1823,8 +1814,8 @@ class PreDispatchTorchFunctionMode(TorchFunctionMode):
         self,
         func: OpOverload | Callable,
         types: TensorMetaTuple,
-        args: ObjectTuple = (),
-        kwargs: MaybeObjectDict = None,
+        args: tuple[object, ...] = (),
+        kwargs: dict[str, object] | None = None,
     ) -> object:
         kwargs = kwargs or {}
         if func in _side_effectful_need_to_be_preserved_pre_dispatch:
@@ -1922,8 +1913,8 @@ class ProxyTorchDispatchMode(TorchDispatchMode):
         self,
         func: OpOverload,
         types: TensorMetaTuple,
-        args: ObjectTuple = (),
-        kwargs: MaybeObjectDict = None,
+        args: tuple[object, ...] = (),
+        kwargs: dict[str, object] | None = None,
     ) -> object:
         with set_original_aten_op(func):
             kwargs = kwargs or {}
@@ -1962,8 +1953,8 @@ class ProxyTorchDispatchMode(TorchDispatchMode):
         self,
         func: OpOverload,
         types: TensorMetaTuple,
-        args: ObjectTuple,
-        kwargs: ObjectDict,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
     ) -> object:
         # Peephole optimize multiply by one
         # NB: be careful not to trigger guards here!
@@ -1984,7 +1975,7 @@ class ProxyTorchDispatchMode(TorchDispatchMode):
 
 
 def _sym_register(
-    tracer: _ProxyTracer, func: OpOverload, args: ObjectTuple, out: object
+    tracer: _ProxyTracer, func: OpOverload, args: tuple[object, ...], out: object
 ) -> None:
     # If func returned a constant, we don't need to trace; we have
     # determined that the result is constant (no matter if the inputs
@@ -1998,10 +1989,10 @@ def _sym_register(
 
 
 def _compute_proxy(
-    tracer: _ProxyTracer, func: OpOverload, args: ObjectTuple, out: PySymType
+    tracer: _ProxyTracer, func: OpOverload, args: tuple[object, ...], out: PySymType
 ) -> Proxy:
     # Handle torch.sym_sum
-    n_args: ObjectTuple
+    n_args: tuple[object, ...]
     if len(args) == 1 and isinstance(args[0], (list, tuple)):
         n_args = (
             tuple(
@@ -2040,7 +2031,7 @@ class _GraphAppendingTracerEx(fx.proxy.GraphAppendingTracer):
     symnode_tracker: _SymNodeDict
     tensor_tracker: MutableMapping[Tensor, _ProxyTensor]
     sympy_expr_tracker: dict[sympy.Symbol, _SympyExprTrackerValue]
-    torch_fn_metadata: MaybeOpOverload
+    torch_fn_metadata: OpOverload | None
     torch_fn_counts: dict[OpOverload, int]
     enable_thunkify: bool = False
 
@@ -2070,8 +2061,8 @@ class DecompositionInterpreter(fx.Interpreter):
     def placeholder(
         self,
         target: str,  # type: ignore[override]
-        args: ObjectTuple,
-        kwargs: ObjectDict,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
     ) -> object:
         out = super().placeholder(target, args, kwargs)  # type: ignore[arg-type]
         proxy = fx.Proxy(self.new_graph.placeholder(target), self.tracer)
@@ -2083,8 +2074,8 @@ class DecompositionInterpreter(fx.Interpreter):
     def get_attr(
         self,
         target: str,  # type: ignore[override]
-        args: ObjectTuple,
-        kwargs: ObjectDict,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
     ) -> object:
         out = super().get_attr(target, args, kwargs)  # type: ignore[arg-type]
         proxy = fx.Proxy(self.new_graph.get_attr(target), self.tracer)
@@ -2097,8 +2088,8 @@ class DecompositionInterpreter(fx.Interpreter):
     def output(
         self,
         target: str,  # type: ignore[override]
-        args: ObjectTuple,
-        kwargs: ObjectDict,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
     ) -> object:
         out = super().output(target, args, kwargs)  # type: ignore[arg-type]
 
@@ -2206,7 +2197,7 @@ def selective_decompose(
 
 
 def wrapper_and_args_for_make_fx(
-    func: Callable[..., R], args: ObjectTuple, kwargs: ObjectDict
+    func: Callable[..., R], args: tuple[object, ...], kwargs: dict[str, object]
 ) -> tuple[Callable[[list[object]], R], list[object]]:
     # make_fx doesn't support kwargs, so we need to do this flattening
     # and then unflatten the args before calling func
@@ -2402,7 +2393,7 @@ class _ModuleStackTracer(PythonKeyTracer):
         return self.attr_proxy_map[attr_val]
 
     def trace(  # type: ignore[override]
-        self, root: RootModuleOrCallable, concrete_args: MaybeObjectDict
+        self, root: Module | Callable, concrete_args: dict[str, object] | None
     ) -> fx.Graph:
         res = super().trace(root, concrete_args)
 
@@ -2474,8 +2465,8 @@ class _ModuleStackTracer(PythonKeyTracer):
         self,
         m: Module,
         forward: Callable,
-        args: ObjectTuple,
-        kwargs: ObjectDict,
+        args: tuple[object, ...],
+        kwargs: dict[str, object],
     ) -> None:
         """PythonKeyTracer overrides call_module to avoid the scope handling,
         but we actually want it.
@@ -2556,7 +2547,7 @@ class _MakefxTracer:
         _allow_fake_constant: bool,
         _error_on_data_dependent_ops: bool,
         record_stack_traces: bool = False,
-        parent_tracer: MaybeMakefxTracer = None,
+        parent_tracer: _MakefxTracer | None = None,
         proxy_module_inputs: bool = False,
         _disable_torch_fn_metadata_mode: bool = False,
     ) -> None:
@@ -2590,7 +2581,7 @@ class _MakefxTracer:
             nullcontext()
         )
         self.record_stack_traces = record_stack_traces
-        self.parent_tracer: MaybeMakefxTracer = parent_tracer
+        self.parent_tracer: _MakefxTracer | None = parent_tracer
         self.proxy_module_inputs = proxy_module_inputs
         self._disable_torch_fn_metadata_mode = _disable_torch_fn_metadata_mode
 
@@ -2622,7 +2613,7 @@ class _MakefxTracer:
 
     @contextmanager
     def _init_modes_from_inputs(
-        self, f: Callable, args: ObjectTuple
+        self, f: Callable, args: tuple[object, ...]
     ) -> Generator[None, None, None]:
         prev_modes = self._checkpoint_modes()
         try:
@@ -2905,7 +2896,7 @@ class _MakefxTracer:
             return sub_tracer._trace_inner(f, *args)
 
 
-_CURRENT_MAKE_FX_TRACER: MaybeMakefxTracer = None
+_CURRENT_MAKE_FX_TRACER: _MakefxTracer | None = None
 
 
 @contextmanager
@@ -2995,7 +2986,7 @@ def get_proxy_mode() -> ProxyTorchDispatchMode | None:
 
 
 def handle_sym_dispatch(
-    func: CallablePToR,
+    func: Callable[_P, R],
     args: _P.args,  # type: ignore[valid-type]  # not allowed to use _P.args here
     kwargs: _P.kwargs,  # type: ignore[valid-type]  # not allowed to use _P.kwargs here
 ) -> R:
@@ -3023,8 +3014,8 @@ def disable_proxy_modes_tracing() -> Generator[ProxyTorchDispatchMode, None, Non
 def maybe_handle_decomp(
     proxy_mode: ProxyTorchDispatchMode,
     op: OpOverload,
-    args: ObjectTuple,
-    kwargs: ObjectDict,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
 ) -> object:
     from torch._inductor.compiler_bisector import CompilerBisector
 
@@ -3046,8 +3037,8 @@ def maybe_handle_decomp(
 
 def get_isolated_graphmodule(
     func: Callable,
-    args: ObjectTuple,
-    kwargs: ObjectDict,
+    args: tuple[object, ...],
+    kwargs: dict[str, object],
     tracing_mode: str = "real",
     decomposition_table: MaybeDecompositionTable = None,
 ) -> GraphModule:

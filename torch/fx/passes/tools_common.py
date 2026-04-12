@@ -4,8 +4,7 @@ import heapq
 import operator
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
-from typing_extensions import TypeAlias
+from typing import Any, TypeAlias
 
 import torch
 import torch.fx
@@ -40,7 +39,7 @@ def get_acc_ops_name(k):
         module = k.__module__.replace(
             "torch._ops", "torch.ops"
         )  # WAR for bug in how torch.ops assigns module
-        return f"{module if module else ''}.{k.__name__}"
+        return f"{module or ''}.{k.__name__}"
 
 
 @compatibility(is_backward_compatible=False)

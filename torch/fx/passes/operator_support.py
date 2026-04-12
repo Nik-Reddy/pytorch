@@ -2,8 +2,9 @@
 import abc
 import typing as t
 
+from typing import TypeAlias
+
 import torch
-from typing_extensions import TypeAlias
 import torch.fx
 from torch.fx._compatibility import compatibility
 
