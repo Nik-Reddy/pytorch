@@ -119,7 +119,7 @@ zip = strict_zip
 
 aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")
 
-OutputHandler: TypeAlias = Callable[[list[Any], list[Any], Any], Any]
+OutputHandler: TypeAlias = Callable[[dict[int, Any], list[Any], Any], Any]
 OutputStrideMetadata: TypeAlias = list[list[int] | None]
 UpdatedInputStorageIndices: TypeAlias = list[int | tuple[int, torch.Tensor]]
 
@@ -210,7 +210,9 @@ class NoopAliasHandler:
     ) -> None:
         pass
 
-    def __call__(self, orig_inputs: list[Any], fw_outs: list[Any], out: Any) -> Any:
+    def __call__(
+        self, orig_inputs: dict[int, Any], fw_outs: list[Any], out: Any
+    ) -> Any:
         return out
 
 
@@ -235,7 +237,7 @@ class AliasOfInputHandler:
         self.replay_views = config.view_replay_for_aliased_outputs
 
     def __call__(
-        self, orig_inputs: list[Any], fw_outs: list[Any], out: Any
+        self, orig_inputs: dict[int, Any], fw_outs: list[Any], out: Any
     ) -> torch.Tensor:
         aliased_base_tensor = orig_inputs[self.base_idx]
         return gen_alias_from_base(
@@ -255,7 +257,7 @@ class IsInputHandler:
         self.unwrap_out = _unwrap_tensoralias if trace_joint else _identity
 
     def __call__(
-        self, orig_inputs: list[Any], fw_outs: list[Any], out: Any
+        self, orig_inputs: dict[int, Any], fw_outs: list[Any], out: Any
     ) -> torch.Tensor:
         aliased_base_tensor = orig_inputs[self.base_idx]
         return aliased_base_tensor
@@ -283,7 +285,7 @@ class AliasOfIntermediateHandler:
         self.replay_views = config.view_replay_for_aliased_outputs
 
     def __call__(
-        self, orig_inputs: list[Any], fw_outs: list[Any], out: Any
+        self, orig_inputs: dict[int, Any], fw_outs: list[Any], out: Any
     ) -> torch.Tensor:
         aliased_base_tensor = fw_outs[self.base_idx]
         return gen_alias_from_base(
@@ -494,9 +496,7 @@ class _RuntimeCompiledFnInvoker:
         if not getattr(self.compiled_fn, "_boxed_call", False):
             self.compiled_fn = make_boxed_func(self.compiled_fn)
 
-    def run(
-        self, args: list[Any], *, on_before_call: Callable[[], None]
-    ) -> list[Any]:
+    def run(self, args: list[Any], *, on_before_call: Callable[[], None]) -> list[Any]:
         with self.first_invocation_ctx():
             if self.trace_joint:
                 args_ = list(args)

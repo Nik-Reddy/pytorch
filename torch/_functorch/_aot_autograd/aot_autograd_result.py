@@ -56,12 +56,7 @@ from .utils import simple_wraps
 if TYPE_CHECKING:
     from torch._inductor.compile_fx import _CompileFxKwargs
 
-    from .schemas import (
-        AOTConfig,
-        IndexList,
-        StringList,
-        ViewAndMutationMeta,
-    )
+    from .schemas import AOTConfig, IndexList, StringList, ViewAndMutationMeta
 
 log = logging.getLogger(__name__)
 aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")
