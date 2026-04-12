@@ -11,6 +11,7 @@ In particular, the following analyses are provided:
 
 import contextlib
 import itertools
+from typing import Any
 
 import torch
 import torch.utils._pytree as pytree
@@ -24,7 +25,6 @@ from torch.fx.experimental.symbolic_shapes import is_concrete_int
 from .collect_metadata_analysis import coerce_tangent_and_suggest_memory_format
 from .descriptors import InputMutationAOTOutput, TangentAOTInput
 from .schemas import (
-    AnyList,
     AOTConfig,
     AOTInputList,
     BackwardSignature,
@@ -130,8 +130,8 @@ def create_synthetic_base_metadata(
     # Maps each outer argument idx to its inner idx (or, if this outer arg is generated from a
     # synthetic base, you get a tuple of (i, TensorMeta), telling you the base tensor idx, and view metadata)
     synthetic_base_info: list[int | tuple[int, torch.Tensor]],
-    outer_args: AnyList,
-    inner_args: AnyList,
+    outer_args: list[Any],
+    inner_args: list[Any],
     inner_args_desc: AOTInputList,
 ) -> tuple[ViewAndMutationMeta, IndexList]:
     # maps inner arg indices to outer arg indices
@@ -316,7 +316,7 @@ def create_synthetic_base_metadata(
 
 
 def compute_overlapping_inputs(
-    aot_config: AOTConfig, fwd_inputs: AnyList, aliased_input_indices: IndexList
+    aot_config: AOTConfig, fwd_inputs: list[Any], aliased_input_indices: IndexList
 ) -> set[int]:
     num_aliases = len(aliased_input_indices)
 
@@ -400,7 +400,7 @@ def _graph_input_names(gm: torch.fx.GraphModule) -> StringList:
     return [node.name for node in gm.graph.find_nodes(op="placeholder")]
 
 
-def _graph_output_names(gm: torch.fx.GraphModule) -> AnyList:
+def _graph_output_names(gm: torch.fx.GraphModule) -> list[Any]:
     output_node = next(iter(reversed(gm.graph.nodes)))
     if output_node.op != "output" or len(output_node.args) != 1:
         raise AssertionError(

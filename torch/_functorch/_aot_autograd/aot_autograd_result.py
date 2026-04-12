@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from copy import copy
 from dataclasses import dataclass
 from typing import Any, Generic, TYPE_CHECKING
@@ -57,9 +57,6 @@ if TYPE_CHECKING:
     from torch._inductor.compile_fx import _CompileFxKwargs
 
     from .schemas import (
-        AnyCallable,
-        AnySequence,
-        AnyTuple,
         AOTConfig,
         IndexList,
         StringList,
@@ -82,7 +79,7 @@ class InductorOutput(ABC, Generic[TOut]):
     def pre_save(self) -> None: ...
 
     @abstractmethod
-    def load(self, example_inputs: AnySequence) -> TOut: ...
+    def load(self, example_inputs: Sequence[Any]) -> TOut: ...
 
     @abstractmethod
     def post_compile(self, result: TOut, fx_config: _CompileFxKwargs) -> TOut: ...
@@ -108,7 +105,7 @@ class BundledOutputCodeLoadable(InductorOutput[TOutputCode], Generic[TOutputCode
         self.result = disk_result
         return
 
-    def load(self, example_inputs: AnySequence) -> TOutputCode:
+    def load(self, example_inputs: Sequence[Any]) -> TOutputCode:
         self.example_inputs = example_inputs
         return self.result
 
@@ -159,7 +156,7 @@ class FxGraphCacheLoadable(InductorOutput[CompiledFxGraph]):
     def _is_backward(self) -> bool:
         return False
 
-    def load(self, example_inputs: AnySequence) -> CompiledFxGraph:
+    def load(self, example_inputs: Sequence[Any]) -> CompiledFxGraph:
         from .autograd_cache import FXGraphCacheMiss
 
         # [Note: AOTAutogradCache and FXGraphCache Guard interactions]
@@ -312,7 +309,7 @@ class BundledCompiledBackward(
 @dataclass
 class SerializedGraphModule:
     fn: Callable[[dict[Any, Any], str], torch.nn.Module]
-    args: AnyTuple
+    args: tuple[Any, ...]
 
     def __init__(self, gm: torch.fx.GraphModule) -> None:
         self.fn, self.args = gm.__reduce__()
@@ -649,7 +646,7 @@ class BundledAOTAutogradResult(
 
 def deserialize_bundled_cache_entry(
     entry: BundledAOTAutogradResult[Any],
-) -> AnyCallable:
+) -> Callable[..., Any]:
     from copy import deepcopy
 
     from torch._inductor.cudagraph_utils import BoxedDeviceIndex

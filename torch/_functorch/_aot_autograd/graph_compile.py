@@ -77,9 +77,6 @@ from .runtime_wrappers import (
     SerializableCompiledFunction,
 )
 from .schemas import (
-    AnyCallable,
-    AnyList,
-    AnyTuple,
     AOTConfig,
     AOTGraphCapture,
     AOTOutputList,
@@ -106,7 +103,7 @@ from .utils import (
 )
 
 
-DispatchReturn: TypeAlias = tuple[AnyCallable, ViewAndMutationMeta]
+DispatchReturn: TypeAlias = tuple[Callable[..., Any], ViewAndMutationMeta]
 
 
 def is_opaque_node(node: Any) -> bool:
@@ -422,7 +419,7 @@ def _log_inference_graph(
 
 def _aot_stage2b_inference_compile(
     fw_module: torch.fx.GraphModule,
-    updated_flat_args: AnyList,
+    updated_flat_args: list[Any],
     maybe_subclass_meta: SubclassMeta | None,
     fw_metadata: ViewAndMutationMeta,
     aot_config: AOTConfig,
@@ -492,7 +489,7 @@ def _cache_inference_info(
     aot_config: AOTConfig,
     fw_metadata: ViewAndMutationMeta,
     maybe_subclass_meta: SubclassMeta | None,
-    compiled_fw: AnyCallable,
+    compiled_fw: Callable[..., Any],
     aot_forward_graph_str: str | None,
     wrappers: list[CompilerWrapper],
 ) -> GenericAOTAutogradResult[Any, Any] | None:
@@ -541,7 +538,7 @@ def _cache_inference_info(
 def _aot_stage2c_make_inference_function(
     aot_config: AOTConfig,
     fw_metadata: ViewAndMutationMeta,
-    compiled_fw: AnyCallable,
+    compiled_fw: Callable[..., Any],
     wrappers: list[CompilerWrapper],
     entry: GenericAOTAutogradResult[Any, Any] | None,
 ) -> DispatchReturn:
@@ -1151,7 +1148,9 @@ def maybe_log_graph(
         )
 
 
-def create_wrap_fn(fn: AnyCallable, args: AnyTuple) -> tuple[AnyCallable, AnyTuple]:
+def create_wrap_fn(
+    fn: Callable[..., Any], args: tuple[Any, ...]
+) -> tuple[Callable[..., Any], tuple[Any, ...]]:
     from torch.fx.experimental.proxy_tensor import maybe_enable_thunkify
 
     from .functional_utils import from_fun, has_data_mutation, to_fun
@@ -1179,7 +1178,7 @@ def create_wrap_fn(fn: AnyCallable, args: AnyTuple) -> tuple[AnyCallable, AnyTup
 
 
 def prepare_hook_gm(
-    aot_config: AOTConfig, fn: AnyCallable, args: AnyTuple
+    aot_config: AOTConfig, fn: Callable[..., Any], args: tuple[Any, ...]
 ) -> torch.fx.GraphModule:
     from torch._functorch._aot_autograd.graph_capture import _create_graph
 
@@ -1785,7 +1784,7 @@ def _partition_joint_graph_into_fw_bw(
 
 def _joint_inputs_for_forward(
     joint_inputs: UpdatedFlatArgs,
-) -> AnyList:
+) -> list[Any]:
     return joint_inputs[0] if isinstance(joint_inputs, tuple) else joint_inputs
 
 
@@ -1999,7 +1998,7 @@ def _aot_stage2a_partition(
     maybe_subclass_meta: SubclassMeta | None,
     fw_metadata: ViewAndMutationMeta,
     aot_config: AOTConfig,
-) -> tuple[torch.fx.GraphModule, torch.fx.GraphModule, int, int, IndexList, AnyList]:
+) -> tuple[torch.fx.GraphModule, torch.fx.GraphModule, int, int, IndexList, list[Any]]:
     """
     Partition the joint graph into a forward graph and a backward graph. Returns:
     - the forward and backward graphs
@@ -2070,7 +2069,7 @@ def _aot_stage2a_partition(
 
 def _aot_stage2b_fw_compile(
     fw_module: torch.fx.GraphModule,
-    adjusted_flat_args: AnyList,
+    adjusted_flat_args: list[Any],
     maybe_subclass_meta: SubclassMeta | None,
     fw_metadata: ViewAndMutationMeta,
     num_fw_outs_saved_for_bw: int,
@@ -2341,14 +2340,14 @@ def aot_stage2_autograd(
 
 def _aot_stage2c_make_autograd_function(
     aot_config: AOTConfig,
-    flat_args: AnyList,
+    flat_args: list[Any],
     fw_metadata: ViewAndMutationMeta,
     maybe_subclass_meta: SubclassMeta | None,
     wrappers: list[CompilerWrapper],
-    compiled_fw_func: AnyCallable,
-    compiled_bw_func: AnyCallable | None,
+    compiled_fw_func: Callable[..., Any],
+    compiled_bw_func: Callable[..., Any] | None,
     lazy_backward_info: AutogradLazyBackwardCompileInfo | None,
-    try_save_cache_entry: AnyCallable,
+    try_save_cache_entry: Callable[..., Any],
     entry: GenericAOTAutogradResult[Any, Any] | None,
     _indices_of_inps_to_detach: IndexList,
     num_symints_saved_for_bw: int,
@@ -2399,9 +2398,9 @@ def _aot_stage2c_make_autograd_function(
 
 def _cache_autograd_info(
     aot_config: AOTConfig,
-    flat_args: AnyList,
-    compiled_fw_func: AnyCallable,
-    compiled_bw_func: AnyCallable | None,
+    flat_args: list[Any],
+    compiled_fw_func: Callable[..., Any],
+    compiled_bw_func: Callable[..., Any] | None,
     fw_module_str: str | None,
     bw_module_str: str | None,
     joint_graph_str: str | None,
@@ -2414,7 +2413,7 @@ def _cache_autograd_info(
     bw_module: torch.fx.GraphModule | None,
 ) -> tuple[
     GenericAOTAutogradResult[Any, Any] | None,
-    AnyCallable,
+    Callable[..., Any],
 ]:
     backward_state_indices = [
         idx for idx, x in enumerate(flat_args) if isinstance(x, BackwardState)
@@ -2426,7 +2425,7 @@ def _cache_autograd_info(
 
     make_runtime_safe(fw_metadata, maybe_subclass_meta)
 
-    try_save_cache_entry: AnyCallable | None = None
+    try_save_cache_entry: Callable[..., Any] | None = None
     entry: GenericAOTAutogradResult[Any, Any] | None = None
 
     if aot_config.cache_info is not None:
@@ -2436,7 +2435,7 @@ def _cache_autograd_info(
         # close over aot_config.cache_info, since aot_config never changes.
         # But closing over random variables is confusing IMO, so I'm leaving it.
         def try_save_cache_entry(  # noqa: F811
-            compiled_bw_func: AnyCallable,
+            compiled_bw_func: Callable[..., Any],
             bw_module: torch.fx.GraphModule,
             _fw_metadata: ViewAndMutationMeta,
             aot_config: AOTConfig,
@@ -2513,7 +2512,7 @@ def _cache_autograd_info(
 
 def _aot_stage2b_compile_forward_or_inference(
     fw_module: torch.fx.GraphModule,
-    adjusted_flat_args: AnyList,
+    adjusted_flat_args: list[Any],
     maybe_subclass_meta: SubclassMeta | None,
     fw_metadata: ViewAndMutationMeta,
     aot_config: AOTConfig,

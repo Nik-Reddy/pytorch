@@ -79,10 +79,6 @@ from .runtime_wrappers import (
     SubclassMeta,
 )
 from .schemas import (  # noqa: F401
-    AnyCallable,
-    AnyList,
-    AnySequence,
-    AnyTuple,
     AOTAutogradCacheInfo,
     AOTConfig,
     IndexList,
@@ -93,7 +89,7 @@ from .schemas import (  # noqa: F401
 
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator, Sequence
 
     from torch._inductor.compile_fx import _CompileFxKwargs, CompilerConfigExtra
     from torch._inductor.remote_cache import JsonDataTy, RemoteCache
@@ -179,7 +175,7 @@ def check_node_safe(node: Node) -> None:
         "einops.einops.repeat",
     )
 
-    def is_public_torch_api(target: AnyCallable) -> bool:
+    def is_public_torch_api(target: Callable[..., Any]) -> bool:
         # Don't blindly allow private functions in the torch namespace
         is_private = target.__name__.startswith("_")
 
@@ -187,7 +183,7 @@ def check_node_safe(node: Node) -> None:
             getattr(target, "__module__", None) in SAFE_TORCH_MODULES and not is_private
         )
 
-    def is_safe_torch_function(target: AnyCallable) -> bool:
+    def is_safe_torch_function(target: Callable[..., Any]) -> bool:
         """Allowlisted torch functions"""
         function_name = f"{target.__module__}.{target.__name__}"
         # Allow torch.autograd.function.FunctionCtx if custom autograd functions are allowed
@@ -205,7 +201,7 @@ def check_node_safe(node: Node) -> None:
             or function_name in torch._inductor.config.unsafe_marked_cacheable_functions
         )
 
-    def is_cacheable_function(target: AnyCallable) -> bool:
+    def is_cacheable_function(target: Callable[..., Any]) -> bool:
         if isinstance(target, (torch._ops.OpOverload, torch._ops.OpOverloadPacket)):
             return True
         if is_public_torch_api(target):
@@ -311,7 +307,7 @@ def check_cacheable(gm: torch.fx.GraphModule) -> None:
         check_cacheable(gm.saved_tensors_hooks_unpack_0)  # type: ignore[arg-type]
 
 
-def _get_context_fn_cache_hash(context_fn: AnyCallable) -> str | None:
+def _get_context_fn_cache_hash(context_fn: Callable[..., Any]) -> str | None:
     """
     Extract a cache hash from a context_fn used for selective activation checkpointing (SAC).
 
@@ -466,7 +462,7 @@ class AOTAutogradCacheDetails(FxGraphHashDetails):
     def __init__(
         self,
         gm: torch.fx.GraphModule,
-        example_inputs: AnySequence,
+        example_inputs: Sequence[Any],
         aot_config: AOTConfig,
         fx_config: _CompileFxKwargs,
     ) -> None:
@@ -635,7 +631,9 @@ class AOTAutogradCachePickler(FxGraphCachePickler):
         )
         return hashlib.blake2b(cache_data, digest_size=16).hexdigest()
 
-    def _reduce_aot_config(self, aot_config: AOTConfig) -> tuple[AnyCallable, AnyTuple]:
+    def _reduce_aot_config(
+        self, aot_config: AOTConfig
+    ) -> tuple[Callable[..., Any], tuple[Any, ...]]:
         """
         Reduce the config to a stable key for caching.
         """
@@ -653,7 +651,7 @@ class AOTAutogradCachePickler(FxGraphCachePickler):
             ),
         )
 
-    def _reduce_tensor(self, t: torch.Tensor) -> tuple[AnyCallable, tuple[Any]]:
+    def _reduce_tensor(self, t: torch.Tensor) -> tuple[Callable[..., Any], tuple[Any]]:
         """
         Reduce the tensor to a stable key for caching.
         """
@@ -736,7 +734,7 @@ def create_fx_config(
 
 def autograd_cache_key(
     mod: torch.fx.GraphModule | torch._dynamo.utils.GmWrapper,
-    example_inputs: AnySequence,
+    example_inputs: Sequence[Any],
     config: AOTConfig,
     compiler_config_extra: CompilerConfigExtra | None = None,
     # TODO: add args and parameters
@@ -890,13 +888,13 @@ class AOTAutogradCache(GuardedCache[GenericAOTAutogradResult[Any, Any]]):
     @staticmethod
     def try_load(
         mod: torch.fx.GraphModule | torch._dynamo.utils.GmWrapper,
-        args: AnyList,
+        args: list[Any],
         aot_config: AOTConfig,
         compiler_config_extra: CompilerConfigExtra | None,
         local: bool,
         remote: bool,
         compile_region_name: str | None = None,
-    ) -> AnyCallable | None:
+    ) -> Callable[..., Any] | None:
         """
         Load a result from the cache, and reconstruct a runtime wrapper around the object
         """
@@ -1109,7 +1107,7 @@ class AOTAutogradCache(GuardedCache[GenericAOTAutogradResult[Any, Any]]):
         key: str,
         local: bool,
         remote: bool,
-        args: AnyList,
+        args: list[Any],
         cache_info: StringAnyDict,
         aot_config: AOTConfig | None,
     ) -> tuple[GenericAOTAutogradResult[Any, Any], bytes] | None:

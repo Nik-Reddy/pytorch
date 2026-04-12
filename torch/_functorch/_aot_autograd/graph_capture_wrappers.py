@@ -73,8 +73,6 @@ from .functional_utils import (
 )
 from .logging_utils import setup_stacktrace_preservation_hooks
 from .schemas import (
-    AnyCallable,
-    AnyTuple,
     AOTConfig,
     AOTInputList,
     AOTOutputList,
@@ -115,13 +113,13 @@ from .utils import (
 # if keep_data_input_mutations is set, then we assume that data-only mutations
 # will be left in the graph, and we only return metadata-mutated inputs as outputs.
 def fn_input_mutations_to_outputs(
-    fn: AnyCallable,
+    fn: Callable[..., Any],
     args_descs: AOTInputList,
     meta: ViewAndMutationMeta,
     keep_data_input_mutations: bool,
 ) -> Any:
     @simple_wraps(fn)
-    def inner_fn(*args: FxValue) -> tuple[AnyTuple, AnyTuple]:
+    def inner_fn(*args: FxValue) -> tuple[tuple[Any, ...], tuple[Any, ...]]:
         outs, outs_descs = call_and_expect_output_descs(fn, args)
         if len(meta.output_info) != len(outs):
             raise AssertionError(
@@ -288,7 +286,7 @@ def fn_prepped_for_autograd(
 
 @dataclass
 class JointFnHandle:
-    post_forward: AnyCallable | None = None
+    post_forward: Callable[..., Any] | None = None
 
 
 # Given a fn, computes the joint.
@@ -302,11 +300,11 @@ class JointFnHandle:
 #     otherwise, when we compute autograd.grad(), we will not take those input mutations into account
 #     (the way this is handled is that we ensure any inputs that normally get mutated are cloned first)
 def create_joint(
-    fn: AnyCallable,
+    fn: Callable[..., Any],
     primals_descs: AOTInputList | None = None,
     *,
     aot_config: AOTConfig,
-) -> AnyCallable:
+) -> Callable[..., Any]:
     joint_fn_handle = JointFnHandle()
 
     # post_forward
@@ -502,7 +500,7 @@ def create_joint(
 
 
 def create_functionalized_rng_ops_wrapper(
-    func: AnyCallable,
+    func: Callable[..., Any],
     args: Any,
     args_descs: AOTInputList,
     trace_joint: bool = True,
@@ -845,7 +843,7 @@ def apply_in_graph_mutations(
 # (2) "traced_fn(primals: List[Any], tangents: List[Any])" if trace_joint is True
 # Returns a new (functionalized) function, and updated arguments to call it with.
 def create_functionalized_fn(
-    fn: AnyCallable,
+    fn: Callable[..., Any],
     args: Any,
     args_descs: Any,
     *,
@@ -1181,7 +1179,7 @@ def create_functionalized_fn(
 
 
 def handle_effect_tokens_fn(
-    fn: AnyCallable,
+    fn: Callable[..., Any],
     args: Any,
     args_descs: AOTInputList,
     *,
@@ -1310,7 +1308,7 @@ def aot_dispatch_subclass(
     *,
     is_joint_structure: bool,
     meta: ViewAndMutationMeta,
-    fw_only: AnyCallable,
+    fw_only: Callable[..., Any],
 ) -> SubclassTracingInfo:
     # Skip logic if we don't need to trace through any subclasses
     req_subclass_dispatch = requires_subclass_dispatch(args, meta)  # type: ignore[arg-type]
@@ -1333,7 +1331,7 @@ def aot_dispatch_subclass(
 
     # NB: doesn't take descs, this is going from the NEW flat_args to the
     # subclasses, we don't need to do bookkeeping here
-    def inner_fn(fn: AnyCallable, args: Any, *, use_trace_joint: bool) -> Any:
+    def inner_fn(fn: Callable[..., Any], args: Any, *, use_trace_joint: bool) -> Any:
         # Step 1: wrap tensor inputs into subclasses if necessary
         all_args = wrap_tensor_subclasses_maybe_joint(
             args, is_joint_structure=use_trace_joint, meta=meta
@@ -1486,7 +1484,7 @@ def create_functional_call(
     params_len: int,
     store_orig_mod: bool = False,
     strict_out_tuple: bool = True,
-) -> AnyCallable:
+) -> Callable[..., Any]:
     # Redundant with dynamo, but worth having in case this gets invoked elsewhere.
     # https://github.com/pytorch/pytorch/issues/103569
 

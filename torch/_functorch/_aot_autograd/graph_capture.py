@@ -5,6 +5,7 @@ pathways, taking into account the AOTConfig and the collected ViewAndMutationMet
 
 import contextlib
 import dataclasses
+from collections.abc import Callable
 from typing import Any
 
 import torch
@@ -32,8 +33,6 @@ from .graph_capture_wrappers import (
     handle_effect_tokens_fn,
 )
 from .schemas import (
-    AnyCallable,
-    AnyList,
     AOTConfig,
     AOTInputList,
     FlatFxValues,
@@ -98,7 +97,7 @@ def _extract_tangent_source_stack_traces(
 
 
 def _create_graph(
-    f: AnyCallable,
+    f: Callable[..., Any],
     args: list[torch.Tensor],
     args_descs: AOTInputList
     | None = None,  # keep compat with old clients; maybe we should split into two impls
@@ -426,14 +425,14 @@ def aot_dispatch_base_graph(
 # the same storage, so long as they have separate TensorImpls.)
 def aot_dispatch_autograd_graph(
     flat_fn: TraceFn,
-    flat_args: AnyList,
+    flat_args: list[Any],
     flat_args_descs: AOTInputList,
     aot_config: AOTConfig,
     *,
     fw_metadata: ViewAndMutationMeta,
 ) -> tuple[
     torch.fx.GraphModule,
-    tuple[AnyList, AnyList],
+    tuple[list[Any], list[Any]],
     tuple[AOTInputList, AOTInputList],
     SubclassMeta | None,
 ]:

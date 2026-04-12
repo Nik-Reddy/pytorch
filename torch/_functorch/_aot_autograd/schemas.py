@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import collections
 import functools
-from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from typing import Any, NewType, Protocol, TYPE_CHECKING, TypeAlias
@@ -30,6 +29,7 @@ from .utils import strict_zip
 
 if TYPE_CHECKING:
     import contextlib
+    from collections.abc import Callable, Iterable, Sequence
 
     from torch._guards import Source
     from torch._inductor.output_code import OutputCode
@@ -43,10 +43,6 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 zip = strict_zip
 
-AnyCallable: TypeAlias = Callable[..., Any]
-AnyList: TypeAlias = list[Any]
-AnySequence: TypeAlias = Sequence[Any]
-AnyTuple: TypeAlias = tuple[Any, ...]
 BoolList: TypeAlias = list[bool]
 IndexList: TypeAlias = list[int]
 StringAnyDict: TypeAlias = dict[str, Any]
@@ -442,7 +438,7 @@ class ViewAndMutationMeta:
     # Their only use today is to pass them as a best-guess for tangents when tracing the joint.
     # Stashing them as part of our "metadata" makes it simpler if we want to run our analysis
     # pass once, and reuse the output throughout AOTAutograd
-    traced_tangents: AnyList
+    traced_tangents: list[Any]
 
     # TODO doc
     traced_tangents_descs: AOTInputList
@@ -476,7 +472,7 @@ class ViewAndMutationMeta:
     # At runtime, we don't keep the traced_tangents around since they're not serializable.
     # Instead, we keep any necessary subclass metadata necessary about each traced_tangent.
     # This list is generated after calling make_runtime_safe().
-    traced_tangent_metas: AnyList | None = None
+    traced_tangent_metas: list[Any] | None = None
 
     num_symints_saved_for_bw: int | None = None
 
@@ -1108,10 +1104,10 @@ class AOTConfig:
     Configuration for AOTDispatcher
     """
 
-    fw_compiler: AnyCallable | None
-    bw_compiler: AnyCallable | None
-    partition_fn: AnyCallable | None
-    decompositions: dict[OpOverload, AnyCallable] | None
+    fw_compiler: Callable[..., Any] | None
+    bw_compiler: Callable[..., Any] | None
+    partition_fn: Callable[..., Any] | None
+    decompositions: dict[OpOverload, Callable[..., Any]] | None
     num_params_buffers: int
     aot_id: int
     keep_inference_input_mutations: bool
@@ -1120,7 +1116,7 @@ class AOTConfig:
     dynamic_shapes: bool = False
     aot_autograd_arg_pos_to_source: list[Source] | None = None
     static_input_indices: IndexList | None = None
-    inference_compiler: AnyCallable | None = None
+    inference_compiler: Callable[..., Any] | None = None
     enable_log: bool = True
     # this is always false outside of export.
     pre_dispatch: bool = False
@@ -1237,7 +1233,7 @@ JointTraceFnResult: TypeAlias = tuple[
     tuple[FlatFxValues, OptionalTensorList],
     tuple[AOTOutputList, OptionalAOTOutputList],
 ]
-UpdatedFlatArgs: TypeAlias = AnyList | tuple[AnyList, AnyList]
+UpdatedFlatArgs: TypeAlias = list[Any] | tuple[list[Any], list[Any]]
 UpdatedFlatArgsDescs: TypeAlias = AOTInputList | tuple[AOTInputList, AOTInputList]
 
 
@@ -1401,7 +1397,7 @@ class AOTGraphCapture:  # Produced by aot_stage1_graph_capture
     maybe_subclass_meta: Any
 
 
-FakifiedFlatArgs = NewType("FakifiedFlatArgs", AnyList)
+FakifiedFlatArgs = NewType("FakifiedFlatArgs", list[Any])
 
 
 TOutputCode = TypeVar("TOutputCode", bound="OutputCode")

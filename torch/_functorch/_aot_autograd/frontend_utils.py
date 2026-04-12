@@ -17,7 +17,6 @@ from torch.utils._python_dispatch import is_traceable_wrapper_subclass
 from .. import config
 from .descriptors import BufferAOTInput, DifferentiableAOTInput, ParamAOTInput
 from .schemas import (
-    AnyList,
     AOTConfig,
     FakifiedFlatArgs,
     IndexList,
@@ -36,7 +35,7 @@ static_inputs_log = torch._logging.getArtifactLogger(
 
 
 def process_inputs(
-    flat_args: AnyList,
+    flat_args: list[Any],
     aot_config: AOTConfig,
     fake_mode: FakeTensorMode,
     shape_env: ShapeEnv | None,
@@ -174,7 +173,7 @@ def process_inputs(
 
 
 def construct_fake_mode(
-    flat_args: AnyList, aot_config: AOTConfig
+    flat_args: list[Any], aot_config: AOTConfig
 ) -> tuple[FakeTensorMode, ShapeEnv | None]:
     fake_mode = detect_fake_mode(flat_args)
     if fake_mode is None:

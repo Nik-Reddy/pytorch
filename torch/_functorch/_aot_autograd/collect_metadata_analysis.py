@@ -50,8 +50,6 @@ from .functional_utils import (
     was_inductor_storage_resized,
 )
 from .schemas import (
-    AnyCallable,
-    AnyList,
     AOTInputList,
     IndexList,
     InputAliasInfo,
@@ -85,7 +83,7 @@ static_input_logger = getArtifactLogger("torch._dynamo", "cudagraph_static_input
 # Coercing and collecting traced tangents memory format in one recursive traversal
 def coerce_tangent_and_suggest_memory_format(
     x: Tensor,
-) -> tuple[Any, MemoryFormatMeta | AnyList | None, bool]:
+) -> tuple[Any, MemoryFormatMeta | list[Any] | None, bool]:
     updated = False
     if not isinstance(x, Tensor):
         return x, None, updated
@@ -167,7 +165,7 @@ def coerce_tangent_and_suggest_memory_format(
 #   Specifically, aliased outputs from the forward get regenerated, and don't participate
 #   in the compiled backward function.
 def run_functionalized_fw_and_collect_metadata(
-    f: AnyCallable,
+    f: Callable[..., Any],
     *,
     flat_args_descs: AOTInputList,
     keep_input_mutations: bool,
