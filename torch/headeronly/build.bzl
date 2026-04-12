@@ -25,11 +25,32 @@ def define_targets(rules):
 
     rules.genrule(**genrule_args)
 
+    # Generate core/enum_tag.h from tags.yaml using the real torchgen codegen.
+    # The main generate_aten rule (in //:BUILD.bazel) also produces this file
+    # via headeronly_fm, but Bazel can't declare genrule outputs across package
+    # boundaries.
+    genrule_args = {
+        "name": "enum_tag_h",
+        "srcs": ["//:aten_srcs_for_headeronly"],
+        "outs": ["core/enum_tag.h"],
+        "cmd": "$(execpath //torchgen:gen) " +
+               "--source-path aten/src/ATen " +
+               "--install_dir $(RULEDIR)/__aten_unused " +
+               "--headeronly-install-dir $(@D) " +
+               "--generate headers",
+        "tools": ["//torchgen:gen"],
+    }
+
+    if not is_buck:
+        genrule_args["visibility"] = ["//visibility:public"]
+
+    rules.genrule(**genrule_args)
+
     rules.cc_library(
         name = "torch_headeronly",
         hdrs = rules.glob([
             "**/*.h"
-        ]) + ["version.h.in"],
+        ]) + ["version.h.in", ":enum_tag_h"],
         visibility = ["//visibility:public"],
         deps = [
             "//torch/headeronly/macros",
