@@ -77,22 +77,22 @@ from .runtime_wrappers import (
     SerializableCompiledFunction,
 )
 from .schemas import (
-    AOTConfig,
-    AOTGraphCapture,
-    AOTState,
     AnyCallable,
     AnyList,
     AnyTuple,
+    AOTConfig,
+    AOTGraphCapture,
     AOTOutputList,
+    AOTState,
     FlatFn,
     FlatFxValues,
     FxValue,
     IndexList,
+    MutationType,
     StringAnyDict,
     StringList,
-    UpdatedFlatArgs,
-    MutationType,
     SubclassMeta,
+    UpdatedFlatArgs,
     ViewAndMutationMeta,
 )
 from .subclass_utils import compute_inner_mutated_inp_indices_from_subclass_meta
@@ -104,6 +104,7 @@ from .utils import (
     strict_zip,
     unlift_tokens,
 )
+
 
 DispatchReturn: TypeAlias = tuple[AnyCallable, ViewAndMutationMeta]
 
@@ -179,6 +180,7 @@ aot_joint_log = getArtifactLogger(__name__, "aot_joint_graph")
 aot_graphs_log = getArtifactLogger(__name__, "aot_graphs")
 
 aten = torch.ops.aten
+
 
 def _create_wrappers_for_dispatch(needs_autograd: bool) -> list[CompilerWrapper]:
     """

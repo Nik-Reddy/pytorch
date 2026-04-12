@@ -771,6 +771,7 @@ def simple_wraps(
 
 _Ts = TypeVarTuple("_Ts")
 
+
 def call_and_expect_output_descs(
     fn: Callable[[Unpack[_Ts]], tuple[Any, Any]], args: tuple[Unpack[_Ts]]
 ) -> tuple[Any, Any]:

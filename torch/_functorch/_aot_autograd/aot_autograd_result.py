@@ -50,7 +50,6 @@ from .runtime_wrappers import (
     SerializableCompiledFunction,
     SubclassMeta,
 )
-from .schemas import AOTAutogradCacheInfo
 from .utils import simple_wraps
 
 
