@@ -73,7 +73,7 @@ del test
 global1, global2, global3, global4 = (torch.zeros(3),) * 4
 
 
-class NestedGraphBreakTests(torch._dynamo.test_case.TestCaseWithNestedGraphBreaks):
+class NestedGraphBreakTests(torch._dynamo.test_case.TestCase):
     def test_single_graph_break(self):
         # NOTE marking f1, f2, f3 as global
         # prevents them from being freevars
@@ -966,6 +966,31 @@ class NestedGraphBreakTests(torch._dynamo.test_case.TestCaseWithNestedGraphBreak
         self.assertEqual(cnts.frame_count, 8)
         self.assertEqual(cnts.op_count, 10)
 
+    def test_disable_nested_graph_breaks_context_manager(self):
+        """disable_nested_graph_breaks as a context manager."""
+        global f1, f2, f3
+
+        def f1(x):
+            x = x + 1
+            torch._dynamo.graph_break()
+            return x + 2
+
+        def f2(x):
+            return f1(x + 4) + 8
+
+        def f3(x):
+            with torch._dynamo.disable_nested_graph_breaks():
+                x = f2(x + 16) + 32
+            return x + 64
+
+        cnts = torch._dynamo.testing.CompileCounter()
+        opt_fn = torch._dynamo.optimize(backend=cnts)(f3)
+        x = torch.zeros(3)
+        res = f3(x)
+        ref = opt_fn(x)
+        self.assertEqual(ref, res)
+        self.assertEqual(cnts.frame_count, 6)
+
     def test_nested_store_attr_graph_break(self):
         class Foo:
             def __setattr__(self, name, value):
@@ -1323,6 +1348,34 @@ class NestedGraphBreakTests(torch._dynamo.test_case.TestCaseWithNestedGraphBreak
         inp = torch.randn(3)
         self.assertEqual(gn(inp), inp + 3)
         self.assertEqual(cnts.frame_count, 2)
+
+    def test_step_graph_break_frame_values_not_corrupted(self):
+        """Bytecode generation bug in step_graph_break corrupted parent frame
+        locals when the parent had a non-empty operand stack (num_stack > 0).
+        """
+
+        def inner(x):
+            x = x + 1
+            x = x + 1
+            torch._dynamo.step_unsupported()
+            return x
+
+        cnts = torch._dynamo.testing.CompileCounter()
+
+        @torch.compile(backend=cnts)
+        def fn(x):
+            x = x + 1
+            y = (x, inner(x))
+            return x, y
+
+        x = torch.tensor([1.0, 2.0])
+        result = fn(x)
+        self.assertEqual(result[0], torch.tensor([2.0, 3.0]))
+        self.assertEqual(
+            result[1], (torch.tensor([2.0, 3.0]), torch.tensor([4.0, 5.0]))
+        )
+        self.assertEqual(cnts.frame_count, 1)
+        self.assertEqual(cnts.op_count, 3)
 
     def test_contextmanager_graph_break_in_init(self):
         """Graph break in _GeneratorContextManager.__init__ when the generator
