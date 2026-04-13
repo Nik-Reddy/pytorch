@@ -359,6 +359,20 @@ static PyTypeObject THPGeneratorType = {
 
 bool THPGenerator_init(PyObject* module) {
   THPGeneratorClass = reinterpret_cast<PyObject*>(&THPGeneratorType);
+
+  // Use OpaqueBaseMeta as the metaclass so that
+  // isinstance(fake_script_obj, torch.Generator) works during tracing,
+  // mirroring the pattern used for ProcessGroup in c10d/init.cpp.
+  PyObject* opaque_base_module = PyImport_ImportModule("torch._opaque_base");
+  if (!opaque_base_module)
+    return false;
+  PyObject* opaque_base_meta =
+      PyObject_GetAttrString(opaque_base_module, "OpaqueBaseMeta");
+  Py_DECREF(opaque_base_module);
+  if (!opaque_base_meta)
+    return false;
+  Py_SET_TYPE(&THPGeneratorType, (PyTypeObject*)opaque_base_meta);
+
   if (PyType_Ready(&THPGeneratorType) < 0)
     return false;
   Py_INCREF(&THPGeneratorType);
