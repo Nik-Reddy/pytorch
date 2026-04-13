@@ -669,10 +669,15 @@ def tuned_addmm(inp, mat1, mat2, *, alpha=1, beta=1, layout=None):
 
     if use_aten_gemm_kernels():
         aten_templates: list[ExternKernelChoice | KernelTemplate] = [aten_addmm]
-        # For ROCm, check original inp since kernel_inputs_aten uses inp (not inp_expanded)
+        # For ROCm, kernel_inputs_aten keeps the native 1D bias so hipBLASLt
+        # fused-bias kernels can still see the original bias form.
         bias_to_check = inp if torch.version.hip else inp_expanded
+        is_rocm_1d_bias = torch.version.hip and len(bias_to_check.get_size()) == 1
+        valid_bias_for_bias_addmm = (
+            is_rocm_1d_bias or bias_to_check.get_stride()[0] == 0
+        )
         if (
-            bias_to_check.get_stride()[0] == 0
+            valid_bias_for_bias_addmm
             and inductor_config.triton.autotune_cublasLt
             and not V.graph.cpp_wrapper  # bias_addmm only has a Python implementation
         ):
