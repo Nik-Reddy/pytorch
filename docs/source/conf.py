@@ -1917,6 +1917,8 @@ coverage_ignore_classes = [
     "PackagingErrorReason",
     # torch.package.package_importer
     "PackageImporter",
+    # torch.autograd.profiler_util
+    "EventMetadata",
     # torch.profiler.profiler
     "ExecutionTraceObserver",
     "profile",
