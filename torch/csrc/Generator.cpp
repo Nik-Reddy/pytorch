@@ -27,11 +27,15 @@ PyObject* THPGenerator_initDefaultGenerator(const at::Generator& cdata) {
     throw python_error();
   auto self_ = reinterpret_cast<THPGenerator*>(self.get());
   self_->cdata = cdata;
+  self_->weakrefs = nullptr;
   return self.release();
 }
 
 static void THPGenerator_dealloc(PyObject* _self) {
   auto self = reinterpret_cast<THPGenerator*>(_self);
+  if (self->weakrefs) {
+    PyObject_ClearWeakRefs(_self);
+  }
   if (self->cdata.defined()) {
     self->cdata.set_pyobj(nullptr);
     self->cdata.~Generator();
@@ -337,7 +341,7 @@ static PyTypeObject THPGeneratorType = {
     nullptr, /* tp_traverse */
     nullptr, /* tp_clear */
     nullptr, /* tp_richcompare */
-    0, /* tp_weaklistoffset */
+    offsetof(THPGenerator, weakrefs), /* tp_weaklistoffset */
     nullptr, /* tp_iter */
     nullptr, /* tp_iternext */
     THPGenerator_methods, /* tp_methods */
@@ -404,6 +408,7 @@ PyObject* THPGenerator_NewWithVar(PyTypeObject* type, Generator gen) {
   if (obj) {
     auto g = reinterpret_cast<THPGenerator*>(obj);
     new (&g->cdata) Generator(std::move(gen));
+    g->weakrefs = nullptr;
     set_pyobj(g->cdata, obj);
   }
   return obj;
