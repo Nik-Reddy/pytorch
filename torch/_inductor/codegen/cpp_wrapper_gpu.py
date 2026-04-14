@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 import re
 import sys
 from itertools import count, zip_longest
@@ -1309,7 +1310,15 @@ static struct TritonKernelCompileInit {{
             elif isinstance(arg, bool):
                 new_args.append(str(arg).lower())
             elif isinstance(arg, (int, float, SymbolicCallArg)):
-                new_args.append(str(arg))
+                if isinstance(arg, float) and (math.isinf(arg) or math.isnan(arg)):
+                    if arg == float("inf"):
+                        new_args.append("std::numeric_limits<double>::infinity()")
+                    elif arg == float("-inf"):
+                        new_args.append("-std::numeric_limits<double>::infinity()")
+                    else:
+                        new_args.append("std::numeric_limits<double>::quiet_NaN()")
+                else:
+                    new_args.append(str(arg))
             else:
                 new_args.append(cexpr(V.graph.sizevars.simplify(arg)))
             new_args_types.append(arg_type)
