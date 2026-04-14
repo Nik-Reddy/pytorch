@@ -11,7 +11,7 @@ Tensor tagged_identity(Tensor t) {
 
 STABLE_TORCH_LIBRARY_FRAGMENT(STABLE_LIB_NAME, m) {
   m.def("tagged_identity(Tensor t) -> Tensor",
-        std::vector<at::Tag>{at::Tag::pointwise});
+        {torch::headeronly::Tag::pointwise});
 }
 
 STABLE_TORCH_LIBRARY_IMPL(STABLE_LIB_NAME, CompositeExplicitAutograd, m) {

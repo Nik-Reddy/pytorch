@@ -3085,14 +3085,6 @@ def main() -> None:
             path = depfile_path.parent / (prefix + depfile_name)
             fm.write_outputs(varname, str(path))
 
-        # Write headeronly deps next to the headeronly output
-        headeronly_depfile = (
-            Path(headeronly_install_dir).parent / f"headeronly_{depfile_name}"
-        )
-        headeronly_fm.write_outputs(
-            f"headeronly_{depfile_stem}", str(headeronly_depfile)
-        )
-
 
 if __name__ == "__main__":
     main()
