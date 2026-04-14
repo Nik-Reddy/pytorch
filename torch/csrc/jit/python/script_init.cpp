@@ -592,8 +592,9 @@ struct slot_dict_impl {
 
   static void bind(const py::module& m, const char* name) {
     py::class_<slot_dict_impl<Policy>>(m, name)
-        .def(py::init(
-            [](Module& m) { return slot_dict_impl<Policy>(m._ivalue()); }))
+        .def(py::init([](Module& m) {
+          return slot_dict_impl<Policy>(m._ivalue());
+        }))
         .def("contains", &slot_dict_impl<Policy>::contains)
         .def("items", &slot_dict_impl<Policy>::items)
         .def("setattr", &slot_dict_impl<Policy>::setattr)
@@ -772,13 +773,14 @@ void initJitScriptBindings(PyObject* module) {
                   auto ivalue = toIValue(std::move(value), type);
                   self.setattr(name, ivalue);
                 } catch (std::exception& e) {
-                  throw py::cast_error(c10::str(
-                      "Could not cast attribute '",
-                      name,
-                      "' to type ",
-                      type->repr_str(),
-                      ": ",
-                      e.what()));
+                  throw py::cast_error(
+                      c10::str(
+                          "Could not cast attribute '",
+                          name,
+                          "' to type ",
+                          type->repr_str(),
+                          ": ",
+                          e.what()));
                 }
               })
           .def(
@@ -878,11 +880,12 @@ void initJitScriptBindings(PyObject* module) {
 
                   if (auto qualname = self.type()->name()) {
                     auto class_type = getCustomClass(qualname->qualifiedName());
-                    auto self = Object(c10::ivalue::Object::create(
-                        c10::StrongTypePtr(
-                            std::shared_ptr<torch::jit::CompilationUnit>(),
-                            class_type),
-                        1));
+                    auto self = Object(
+                        c10::ivalue::Object::create(
+                            c10::StrongTypePtr(
+                                std::shared_ptr<torch::jit::CompilationUnit>(),
+                                class_type),
+                            1));
 
                     if (auto setstate_method =
                             self.find_method("__setstate__")) {
@@ -917,60 +920,66 @@ void initJitScriptBindings(PyObject* module) {
                 err << "which does not have a __getstate__ method defined!";
                 throw std::runtime_error(err.str());
               })
-          .def(py::pickle(
-              [](const Object& self)
-                  -> std::tuple<py::object, std::string> { // __getstate__
-                if (auto getstate_method = self.find_method("__getstate__")) {
-                  auto object_state = toPyObject((*getstate_method)(Stack{}));
-                  TORCH_INTERNAL_ASSERT(self.type()->name());
-                  return std::make_tuple(
-                      object_state, self.type()->name()->qualifiedName());
-                }
-                std::stringstream err;
-                err << "Tried to serialize object ";
-                if (auto qualname = self.type()->name()) {
-                  err << qualname->qualifiedName() << ' ';
-                }
-                err << "which does not have a __getstate__ method defined!";
-                throw std::runtime_error(err.str());
-              },
-              [](const std::tuple<py::object, std::string>& state_tup)
-                  -> Object {
-                auto [state, qualname] = state_tup;
-                auto class_type = getCustomClass(qualname);
-                TORCH_CHECK(
-                    class_type,
-                    "Tried to deserialize class ",
-                    qualname,
-                    " which is not known to the runtime. "
-                    "If this is a custom C++ class, make "
-                    "sure the appropriate code is linked.");
+          .def(
+              py::pickle(
+                  [](const Object& self)
+                      -> std::tuple<py::object, std::string> { // __getstate__
+                    if (auto getstate_method =
+                            self.find_method("__getstate__")) {
+                      auto object_state =
+                          toPyObject((*getstate_method)(Stack{}));
+                      TORCH_INTERNAL_ASSERT(self.type()->name());
+                      return std::make_tuple(
+                          object_state, self.type()->name()->qualifiedName());
+                    }
+                    std::stringstream err;
+                    err << "Tried to serialize object ";
+                    if (auto qualname = self.type()->name()) {
+                      err << qualname->qualifiedName() << ' ';
+                    }
+                    err << "which does not have a __getstate__ method defined!";
+                    throw std::runtime_error(err.str());
+                  },
+                  [](const std::tuple<py::object, std::string>& state_tup)
+                      -> Object {
+                    auto [state, qualname] = state_tup;
+                    auto class_type = getCustomClass(qualname);
+                    TORCH_CHECK(
+                        class_type,
+                        "Tried to deserialize class ",
+                        qualname,
+                        " which is not known to the runtime. "
+                        "If this is a custom C++ class, make "
+                        "sure the appropriate code is linked.");
 
-                auto self = Object(c10::ivalue::Object::create(
-                    c10::StrongTypePtr(
-                        std::shared_ptr<torch::jit::CompilationUnit>(),
-                        class_type),
-                    1));
-                if (auto setstate_method = self.find_method("__setstate__")) {
-                  auto setstate_schema =
-                      setstate_method->function().getSchema();
-                  TORCH_INTERNAL_ASSERT(
-                      setstate_schema.arguments().size() == 2,
-                      "__setstate__ method for class ",
-                      class_type->repr_str(),
-                      " must have exactly 2 arguments!");
-                  auto state_type = setstate_schema.arguments().at(1).type();
-                  (*setstate_method)(Stack{toIValue(state, state_type)});
-                  return self;
-                }
-                std::stringstream err;
-                err << "Tried to deserialize object ";
-                if (auto qualname = class_type->name()) {
-                  err << qualname->qualifiedName() << ' ';
-                }
-                err << "which does not have a __setstate__ method defined!";
-                throw std::runtime_error(err.str());
-              }));
+                    auto self = Object(
+                        c10::ivalue::Object::create(
+                            c10::StrongTypePtr(
+                                std::shared_ptr<torch::jit::CompilationUnit>(),
+                                class_type),
+                            1));
+                    if (auto setstate_method =
+                            self.find_method("__setstate__")) {
+                      auto setstate_schema =
+                          setstate_method->function().getSchema();
+                      TORCH_INTERNAL_ASSERT(
+                          setstate_schema.arguments().size() == 2,
+                          "__setstate__ method for class ",
+                          class_type->repr_str(),
+                          " must have exactly 2 arguments!");
+                      auto state_type =
+                          setstate_schema.arguments().at(1).type();
+                      (*setstate_method)(Stack{toIValue(state, state_type)});
+                      return self;
+                    }
+                    std::stringstream err;
+                    err << "Tried to deserialize object ";
+                    if (auto qualname = class_type->name()) {
+                      err << qualname->qualifiedName() << ' ';
+                    }
+                    err << "which does not have a __setstate__ method defined!";
+                    throw std::runtime_error(err.str());
+                  }));
 
   py::class_<Object::Property>(m, "ScriptObjectProperty")
       .def_property_readonly(
@@ -1355,9 +1364,10 @@ void initJitScriptBindings(PyObject* module) {
       });
 
   py::class_<mobile::Module>(m, "LiteScriptModule")
-      .def(py::init<
-           c10::intrusive_ptr<c10::ivalue::Object>,
-           std::shared_ptr<mobile::CompilationUnit>>())
+      .def(
+          py::init<
+              c10::intrusive_ptr<c10::ivalue::Object>,
+              std::shared_ptr<mobile::CompilationUnit>>())
       .def(
           "find_method",
           [](mobile::Module& m, const std::string& method_name) {
@@ -2439,6 +2449,57 @@ void initJitScriptBindings(PyObject* module) {
   m.def("_jit_is_script_object", [](const py::object& obj) {
     return py::isinstance<Object>(obj);
   });
+
+  // Replace a submodule in a ScriptModule with type-safe ClassType update
+  // and graph type remapping.  Modelled after the backend-lowering pass in
+  // backend_init.cpp which does unsafeChangeAttributeType + remapTypes.
+  //
+  // Args:
+  //   root   – top-level ScriptModule whose full graph hierarchy will be
+  //            type-remapped (analogous to `mod` in backend_init.cpp).
+  //   parent – direct parent of the submodule being replaced.
+  //   attr_name – attribute name on `parent` to replace.
+  //   new_submodule – the replacement ScriptModule.
+  m.def(
+      "_jit_replace_submodule",
+      [](Module& root,
+         Module& parent,
+         const std::string& attr_name,
+         Module& new_submodule) {
+        auto old_submodule = parent.attr(attr_name).toModule();
+        auto old_type = old_submodule.type();
+        auto new_type = new_submodule.type();
+
+        // 1. Update the parent's ClassType to accept the new submodule type.
+        parent.type()->unsafeChangeAttributeType(attr_name, new_type);
+
+        // 2. Set the new submodule value (now passes the subtype check).
+        parent.setattr(attr_name, new_submodule._ivalue());
+
+        // 3. Remap the old type to the new type in all graphs reachable
+        //    from the root so that compiled code references the correct
+        //    type.
+        std::unordered_map<TypePtr, TypePtr> type_remap;
+        type_remap[old_type] = new_type;
+        auto type_remap_fn = [&type_remap](TypePtr in) {
+          auto it = type_remap.find(in);
+          if (it == type_remap.end()) {
+            return in;
+          }
+          return it->second;
+        };
+        for (auto module : root.modules()) {
+          auto module_type = module.type();
+          for (auto& fn : module_type->methods()) {
+            auto method = module.get_method(fn->name());
+            auto graph = method.graph();
+            graph->remapTypes(type_remap_fn);
+            auto new_schema =
+                fn->getSchema().cloneWithRemappedTypes(type_remap_fn);
+            fn->setSchema(new_schema);
+          }
+        }
+      });
 
   m.def("_get_file_format", [](const std::string& path) {
     switch (getFileFormat(path)) {

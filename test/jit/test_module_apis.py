@@ -137,5 +137,93 @@ class TestModuleAPIs(JitTestCase):
         self.assertTrue(m2.sub.customized_load_state_dict_called)
 
 
+    def test_jit_replace_submodule(self):
+        """Tests _jit_replace_submodule replaces a submodule with type remapping."""
+
+        class SubA(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 4)
+
+            def forward(self, x):
+                return self.linear(x)
+
+        class SubB(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.linear = torch.nn.Linear(4, 4)
+
+            def forward(self, x):
+                return self.linear(x) * 2
+
+        class Parent(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.child = SubA()
+
+            def forward(self, x):
+                return self.child(x)
+
+        root = torch.jit.script(Parent())
+        new_child = torch.jit.script(SubB())
+
+        inp = torch.randn(2, 4)
+        # Before replacement, runs SubA.forward
+        out_before = root(inp)
+
+        torch._C._jit_replace_submodule(root._c, root._c, "child", new_child._c)
+
+        # After replacement, runs SubB.forward (output * 2)
+        out_after = root(inp)
+        self.assertFalse(torch.equal(out_before, out_after))
+
+        # Verify the submodule type was updated
+        self.assertEqual(
+            root._c.attr("child").type().name(),
+            new_child._c.type().name(),
+        )
+
+    def test_jit_replace_submodule_nested(self):
+        """Tests _jit_replace_submodule on a nested submodule with graph remapping."""
+
+        class Leaf(torch.nn.Module):
+            def __init__(self, scale: float) -> None:
+                super().__init__()
+                self.scale = scale
+
+            def forward(self, x):
+                return x * self.scale
+
+        class Mid(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.leaf = Leaf(1.0)
+
+            def forward(self, x):
+                return self.leaf(x)
+
+        class Root(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.mid = Mid()
+
+            def forward(self, x):
+                return self.mid(x)
+
+        root = torch.jit.script(Root())
+        new_leaf = torch.jit.script(Leaf(3.0))
+
+        inp = torch.randn(2, 4)
+        out_before = root(inp)
+
+        # Replace mid.leaf with a new Leaf(3.0)
+        torch._C._jit_replace_submodule(
+            root._c, root.mid._c, "leaf", new_leaf._c
+        )
+
+        out_after = root(inp)
+        self.assertEqual(out_after, inp * 3.0)
+
+
 if __name__ == "__main__":
     raise_on_run_directly("test/test_jit.py")
