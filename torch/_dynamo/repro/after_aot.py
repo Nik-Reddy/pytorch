@@ -1079,9 +1079,7 @@ def repro_common(
     return mod, args
 
 
-def _get_compile_args(
-    mod: torch.fx.GraphModule, args: Sequence[Any]
-) -> Sequence[Any]:
+def _get_compile_args(mod: torch.fx.GraphModule, args: Sequence[Any]) -> Sequence[Any]:
     """Extract FakeTensor/SymInt args from the traced graph for compilation.
 
     When repro_common traces with tracing_mode='symbolic', the resulting
@@ -1102,9 +1100,7 @@ def _get_compile_args(
     # SymInt values in placeholder metadata are the reliable indicator —
     # FakeTensors appear in both real and symbolic modes, but only symbolic
     # tracing creates SymInts for integer inputs.
-    has_symint = any(
-        isinstance(n.meta.get("val"), torch.SymInt) for n in placeholders
-    )
+    has_symint = any(isinstance(n.meta.get("val"), torch.SymInt) for n in placeholders)
     if not has_symint:
         return args
     return [n.meta.get("val", a) for n, a in zip(placeholders, args)]

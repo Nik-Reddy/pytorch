@@ -299,9 +299,7 @@ reader.tensor(buf0, (3, 4, 5, 6), (120, 1, 24, 4), is_leaf=True)  # x""",
             val = n.meta.get("val")
             if isinstance(val, torch._subclasses.FakeTensor):
                 fake_modes.add(id(val.fake_mode))
-        self.assertGreater(
-            len(fake_modes), 1, "Expected different FakeTensorModes"
-        )
+        self.assertGreater(len(fake_modes), 1, "Expected different FakeTensorModes")
 
         # BUG: manually extracting FakeTensors causes mode mismatch
         fake_args = [n.meta["val"] for n in placeholders]
