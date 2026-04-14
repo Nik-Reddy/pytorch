@@ -199,6 +199,8 @@ dtensor_fails = {
     # DTensorConverter can't convert sparse tensor inputs
     xfail("sparse.sampled_addmm"),
     xfail("sparse.mm", "reduce"),
+    # bug in squeeze.dims strategy: TypeError with empty dims arg
+    xfail("squeeze", "multiple"),
     # meta tensor data not allocated yet during tensor_split
     xfail("tensor_split"),
     # output_specs count mismatch in unsafe_split strategy
@@ -388,7 +390,6 @@ dtensor_numeric_only_fails = {
 # Ops in dtensor_fails that have no sharding strategy (NotImplementedError).
 # These will error during sharding propagation and affect unbacked tests too.
 dtensor_fails_no_strategy = {
-    xfail("_batch_norm_with_update"),
     xfail("_chunk_cat"),
     xfail("_unsafe_masked_index"),
     xfail("_unsafe_masked_index_put_accumulate"),
@@ -416,7 +417,7 @@ dtensor_fails_no_strategy = {
     xfail("multinomial"),
     xfail("nanquantile"),
     xfail("nn.functional.bilinear"),
-    xfail("nn.functional.group_norm"),
+    xfail("nn.functional.hardshrink"),
     xfail("nn.functional.multi_margin_loss"),
     xfail("nn.functional.multilabel_margin_loss"),
     xfail("nn.functional.pad", "reflect"),
