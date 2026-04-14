@@ -2972,6 +2972,25 @@ def pointwise(
                 triton_config_with_settings(size_hints, x, num_warps=nw, num_stages=ns)
                 for x, nw, ns in param_list
             ]
+            if inductor_meta.get("max_autotune_pointwise"):
+                configs.extend(
+                    [
+                        triton_config_with_settings(
+                            size_hints, TRITON_MAX_BLOCK["X"], waves_per_eu=2
+                        ),
+                    ]
+                )
+            if inductor_meta.get("atomic_add_found"):
+                configs.extend(
+                    [
+                        triton_config_with_settings(
+                            size_hints,
+                            64,
+                            num_warps=1,
+                            num_stages=1,  # 250% improvement
+                        )
+                    ]
+                )
         elif not should_autotune:
             configs = [triton_config_with_settings(size_hints, bs)]
         else:
