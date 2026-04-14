@@ -1353,6 +1353,9 @@ class CachingAutotuner(KernelInterface):
                     for key, value in cfg.kwargs.items():
                         if skip_rblock and key.startswith("R") and "BLOCK" in key:
                             continue
+                        if "BLOCK" not in key:
+                            trial_kwargs.setdefault(key, value)
+                            continue
                         trial_kwargs[f"{key}_{idx}"] = value
 
                 if trial_kwargs == current_kwargs:
@@ -2980,6 +2983,11 @@ def _handle_combo_kernel_per_subkernel_blocks(
         cfg = cfgs[0]
         for key, value in cfg.kwargs.items():
             if skip_rblock and key.startswith("R") and "BLOCK" in key:
+                continue
+            if "BLOCK" not in key:
+                # ROCm-specific kwargs like waves_per_eu and matrix_instr_nonkdim
+                # are global execution parameters, not per-subkernel block sizes.
+                combined_kwargs.setdefault(key, value)
                 continue
             combined_kwargs[f"{key}_{i}"] = value
 
