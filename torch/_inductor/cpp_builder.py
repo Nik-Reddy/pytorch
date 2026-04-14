@@ -1700,6 +1700,107 @@ def _find_libcudart_static(path: str) -> Path | None:
     return None
 
 
+def _gen_mingw_import_lib(dll_path: str, def_path: str, import_lib_path: str) -> None:
+    """Generate a MinGW import library (.a) from a DLL using gendef and dlltool."""
+    dll_name = os.path.basename(dll_path)
+    with open(def_path, "w") as def_file:
+        subprocess.run(
+            ["gendef", "-", dll_path],
+            stdout=def_file,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+
+    subprocess.run(
+        [
+            "x86_64-w64-mingw32-dlltool",
+            "-d",
+            def_path,
+            "-l",
+            import_lib_path,
+            "-D",
+            dll_name,
+        ],
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    log.info("Generated MinGW import library %s from %s", import_lib_path, dll_name)
+
+
+def _ensure_mingw_cudart_import_lib(libraries_dirs: list[str]) -> None:
+    """
+    Auto-generate a MinGW-compatible import library (libcudart.a)
+    from the CUDA runtime DLL. This avoids linking against the hybrid cudart.lib
+    which contains MSVC-compiled static objects with /GS security symbols that
+    MinGW cannot resolve.
+
+    Falls back gracefully to the original cudart.lib if gendef/dlltool are
+    unavailable or the generation fails.
+    """
+    import glob
+
+    windows_cuda_home = os.environ.get("WINDOWS_CUDA_HOME")
+    if not windows_cuda_home:
+        log.debug(
+            "WINDOWS_CUDA_HOME not set, skipping MinGW cudart import lib generation"
+        )
+        return
+
+    for lib_dir in libraries_dirs:
+        if os.path.exists(os.path.join(lib_dir, "libcudart.a")):
+            log.debug("libcudart.a already exists in %s, skipping generation", lib_dir)
+            return
+
+    bin_dir = os.path.join(windows_cuda_home, "bin", "x64")
+    if not os.path.isdir(bin_dir):
+        bin_dir = os.path.join(windows_cuda_home, "bin")
+    dll_candidates = glob.glob(os.path.join(bin_dir, "cudart64_*.dll"))
+    if not dll_candidates:
+        log.warning(
+            "No cudart64_*.dll found in %s. Cannot generate MinGW import library. "
+            "If linking fails with undefined references to __security_cookie or "
+            "__security_check_cookie, ensure the CUDA runtime DLL is available.",
+            bin_dir,
+        )
+        return
+
+    dll_path = dll_candidates[0]
+    dll_name = os.path.basename(dll_path)
+
+    output_dir = None
+    for lib_dir in libraries_dirs:
+        if os.path.isdir(lib_dir) and os.access(lib_dir, os.W_OK):
+            if os.path.exists(os.path.join(lib_dir, "cudart.lib")):
+                output_dir = lib_dir
+                break
+    if output_dir is None:
+        log.warning(
+            "No writable directory containing cudart.lib found. "
+            "Cannot generate MinGW import library. "
+            "If linking fails with undefined references to __security_cookie, "
+            "ensure cudart.lib is present in one of: %s",
+            libraries_dirs,
+        )
+        return
+
+    def_path = os.path.join(output_dir, dll_name.replace(".dll", ".def"))
+    import_lib_path = os.path.join(output_dir, "libcudart.a")
+
+    try:
+        _gen_mingw_import_lib(dll_path, def_path, import_lib_path)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        log.warning(
+            "Failed to generate MinGW cudart import library. "
+            "Falling back to original cudart.lib. "
+            "If linking fails with undefined references to __security_cookie, "
+            "install gendef and x86_64-w64-mingw32-dlltool.",
+            exc_info=True,
+        )
+        for f in [def_path, import_lib_path]:
+            if os.path.exists(f):
+                os.remove(f)
+
+
 def _transform_cuda_paths(lpaths: list[str]) -> None:
     # This handles two cases:
     # 1. Cases where libs are in (e.g.) lib/cuda-12 and lib/cuda-12/stubs
@@ -1768,6 +1869,7 @@ def get_cpp_torch_device_options(
             else:
                 libraries += ["cuda", "torch_cuda"]
             if config.aot_inductor.cross_target_platform == "windows":
+                _ensure_mingw_cudart_import_lib(libraries_dirs)
                 libraries += ["cudart"]
             _transform_cuda_paths(libraries_dirs)
 
